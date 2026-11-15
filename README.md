@@ -1,14 +1,49 @@
 # Video Dubber
 
-Video Dubber là ứng dụng web chạy trên máy cá nhân để lồng tiếng và Việt hóa video. Dán link từ Douyin, TikTok, YouTube hoặc Facebook để tải video, nhận dạng lời nói, dịch sang tiếng Việt và xuất bản dựng từ trình duyệt.
+Video Dubber là ứng dụng web chạy trên máy cá nhân để Việt hóa video từ Douyin, TikTok, YouTube và Facebook. Từ một URL, ứng dụng tạo bản lồng tiếng Việt, bản phụ đề Việt hoặc bản dịch chữ xuất hiện trên hình. Giao diện hiển thị tiến độ từng bước và cho phép chỉnh lời dịch, duyệt bản xem trước và chạy lại từ bước đã chọn.
 
-## Quy trình
+## Pipeline chính
 
-1. **Nhận dạng và dịch.** Faster-whisper nhận dạng lời thoại. Ứng dụng ghép các đoạn nhận dạng thành câu trọn ý trước khi dịch.
-2. **Tạo giọng và phụ đề.** Tạo giọng đọc tiếng Việt, căn theo thời gian lời thoại và dựng phụ đề. Có thể tách giọng gốc để giữ lại nhạc nền.
-3. **Xem và xuất video.** Xem bản dựng thử, chỉnh nội dung dịch và xuất video bằng FFmpeg. Có thể che phụ đề gốc hoặc dịch chữ xuất hiện trên hình.
+```mermaid
+flowchart TD
+    A["URL video"] --> B["Tải video và chuẩn bị bản làm việc"]
+    B --> C["Chọn chế độ hoặc tự nhận diện"]
+    C -->|Lồng tiếng| D["Tách giọng gốc và nhạc nền"]
+    C -->|Chỉ phụ đề| E["Nhận dạng lời thoại"]
+    D --> E
+    E --> F["Dịch theo câu và tạo timeline phụ đề"]
+    F -->|Lồng tiếng| G["Tạo và căn giọng Việt, trộn nhạc nền"]
+    C -->|Chỉ dịch chữ| H["OCR, dịch và dựng lại chữ trên hình"]
+    C -.->|Bật xử lý hình ảnh| H
+    F -->|Chỉ phụ đề| I["Ghép hình, âm thanh và phụ đề theo chế độ"]
+    G --> I
+    H --> I
+    I -->|Bật chờ duyệt| J["Render preview và chờ duyệt"]
+    J --> K["Render và xuất kết quả"]
+    I -->|Render trực tiếp| K
+```
 
-Tùy video, bạn có thể chọn lồng tiếng, chỉ làm phụ đề hoặc dịch chữ trên màn hình. Ứng dụng gợi ý chế độ dựa trên lời nói và chữ nhận dạng được. Quá trình xử lý chạy trên máy của bạn. Dịch và tạo giọng có thể dùng dịch vụ bên ngoài tùy cấu hình.
+### Các thành phần cốt lõi
+
+| Thành phần | Vai trò trong pipeline |
+| --- | --- |
+| [Điều phối job](dubber/pipeline.py) · [FastAPI](dubber/app.py) · [Trạng thái job](dubber/jobs.py) | Nhận cấu hình từ giao diện, chọn các bước theo chế độ và cập nhật tiến độ. |
+| [Tải video](dubber/downloader.py) · [Tự nhận diện](dubber/analyze.py) | Tải nguồn, chuẩn bị bản làm việc và dùng mẫu lời nói, chữ trên hình để gợi ý chế độ khi bật tự nhận diện. |
+| [Tách âm thanh](dubber/separate.py) · [Nhận dạng lời thoại](dubber/asr.py) | Tách giọng và nhạc nền cho bản lồng tiếng. Faster-whisper tạo bản ghi lời thoại kèm mốc thời gian để dịch và căn phụ đề. |
+| [Dịch lời thoại](dubber/translate.py) · [Provider dịch](dubber/providers/) | Gom các đoạn nhận dạng thành câu trọn ý, dịch sang tiếng Việt và giữ mốc thời gian. Có thể chuyển sang provider dự phòng theo cấu hình. |
+| [Tạo giọng](dubber/tts.py) · [Nhận diện người nói](dubber/speakers.py) | Sinh giọng Việt theo câu, chọn giọng theo người nói khi bật tự động, và căn thời lượng đọc theo khoảng thoại. |
+| [Dò phụ đề gốc](dubber/subdetect.py) · [Dịch chữ trên hình](dubber/screentext.py) | Tìm vùng phụ đề gốc để che khi cần. Nhánh OCR nhận dạng chữ theo thời gian và vị trí để dịch và vẽ lại tại vùng tương ứng. |
+| [Kết xuất](dubber/render.py) | Dùng FFmpeg để dựng preview hoặc bản cuối, phối âm theo chế độ, áp dụng lớp chữ và xuất phụ đề SRT khi có lời thoại. |
+
+### Chế độ đầu ra
+
+- **Lồng tiếng + phụ đề Việt.** Giọng Việt thay lời thoại gốc, trộn với phần nhạc nền đã tách và đồng bộ với phụ đề.
+- **Chỉ phụ đề Việt.** Giữ âm thanh gốc, bỏ qua tách nhạc và tạo giọng, có thể ghi phụ đề lên hình hoặc xuất SRT riêng.
+- **Chỉ dịch chữ trên màn hình.** Giữ âm thanh gốc, bỏ qua nhận dạng lời thoại và tạo giọng, dùng OCR để dịch tiêu đề, nhãn và chú thích trên hình.
+
+### Duyệt và chạy lại
+
+Chế độ chờ duyệt dừng job sau khi render preview. Khi chạy lại, [checkpoint](dubber/checkpoint.py) dùng dấu vân tay của đầu vào, cấu hình và phiên bản bước để tái sử dụng các kết quả còn hợp lệ. Pipeline lưu bản dịch tự động trong `translate.json` và bản làm việc trong `lines.json` để giữ nội dung chỉnh tay khi dùng lại bản dịch.
 
 ## Chạy trên Windows
 
