@@ -1079,6 +1079,15 @@ a.btnlink{display:inline-block;padding:6px 12px;border:1px solid var(--line);bor
       <label>API key</label><input type="password" data-k="elevenlabs_api_key" placeholder="sk_...">
       <div class="hint">Khi tạo key ở elevenlabs.io → Developers → API Keys, bật quyền <b>Text to Speech</b> (bắt buộc) và <b>Voices: Read</b> (để tải danh sách giọng của bạn). Thiếu quyền Voices thì app vẫn dùng được các giọng mặc định.</div>
     </fieldset>
+    <fieldset><legend>DTK MCP (Douyin / TikTok / Bilibili)</legend>
+      <label class="chk"><input type="checkbox" data-k="dtk_enabled"> Ưu tiên lấy thông tin & tải video không watermark qua DTK MCP Server (không cần mở Chrome, tự lùi về trình duyệt/yt-dlp nếu DTK tắt)</label>
+      <div class="grid2">
+        <div><label>Địa chỉ DTK Server</label><input type="text" data-k="dtk_url" placeholder="http://127.0.0.1:8000"></div>
+        <div><label>API Key (dtk_...)</label><input type="password" data-k="dtk_api_key" placeholder="dtk_..."></div>
+      </div>
+      <div class="row" style="margin-top:6px"><button id="btnDtkCheck" class="shrink">🔌 Kiểm tra kết nối & Pool</button><span id="dtkStatus" class="hint" style="flex:2"></span></div>
+      <div class="hint">Tích hợp <a href="https://github.com/Evil0ctal/Douyin_TikTok_Download_API" target="_blank" rel="noopener">Evil0ctal/Douyin_TikTok_Download_API</a> (hỗ trợ cả bản v5 MCP <code>/mcp/</code> và bản v4 <code>/api/hybrid/video_data</code>). Khi bật, app lấy stream MP4 gốc không watermark, ước tính thời lượng tức thì và mở khoá quét kênh tác giả Douyin (<code>user:…</code>).</div>
+    </fieldset>
     <fieldset><legend>Douyin</legend>
       <div class="row"><button id="btnDouyinLogin">🔑 Đăng nhập Douyin</button><span id="douyinStatus" class="hint" style="flex:2"></span></div>
       <div class="hint">Mở một cửa sổ trình duyệt riêng của app. Bạn tự đăng nhập (quét QR bằng app Douyin) hoặc giải captcha trong đó, rồi <b>đóng cửa sổ</b>. App nhớ phiên này cho các lần tải sau — không cần xuất cookies. Nếu lúc tải mà Douyin đòi xác minh, app cũng tự mở cửa sổ này để bạn xử lý.</div>
@@ -1384,7 +1393,7 @@ $('#btnSettings').onclick = async () => {
   $$('#dlgSettings [data-k]').forEach(el => setVal(el, SETTINGS[el.dataset.k]));
   $('#bandTop').value = SETTINGS.manual_sub_band[0]; $('#bandBot').value = SETTINGS.manual_sub_band[1];
   FB_ORDER = null; loadProviders();
-  $('#dlgSettings').showModal(); douyinStatus(); claudeStatus(); fbStatus(); ttwStatus(); cliStatus('codex_cli'); cliStatus('gemini_cli'); ttStatus();
+  $('#dlgSettings').showModal(); dtkStatus(); douyinStatus(); claudeStatus(); fbStatus(); ttwStatus(); cliStatus('codex_cli'); cliStatus('gemini_cli'); ttStatus();
 };
 /* ---- TikTok login (official API) ---- */
 async function ttStatus() {
@@ -1511,6 +1520,21 @@ $('#btnClaudeLogout').onclick = async () => {
   await api('/api/claude/logout', { method: 'POST' }); claudeStatus();
 };
 $('#closeSettings').onclick = $('#cancelSettings').onclick = () => $('#dlgSettings').close();
+async function dtkStatus() {
+  const el = $('#dtkStatus'); if (!el) return;
+  el.textContent = 'Đang kiểm tra DTK…';
+  const opts = {};
+  $$('#dlgSettings [data-k^="dtk_"]').forEach(x => opts[x.dataset.k] = getVal(x));
+  try {
+    const s = await api('/api/dtk/status', { method: 'POST', body: { options: opts } });
+    if (s.ok) {
+      el.textContent = `🟢 Đã kết nối (${s.mode}) · ${s.usable_identities != null ? s.usable_identities + ' identity sẵn sàng · ' : ''}${s.summary || ''}`;
+    } else {
+      el.textContent = (s.enabled === false ? '⚪ Đang tắt · ' : '⚪ Chưa kết nối được DTK (app sẽ tự dùng trình duyệt / yt-dlp) — ') + (s.error || '');
+    }
+  } catch (e) { el.textContent = '🔴 ' + e.message; }
+}
+$('#btnDtkCheck').onclick = dtkStatus;
 async function douyinStatus() {
   $('#douyinStatus').textContent = 'Đang kiểm tra…';
   try {

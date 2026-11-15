@@ -118,6 +118,8 @@ def _item_from_aweme(a, source, extra=None):
         "is_image": bool(a.get("images")) or a.get("aweme_type") in (68, 150),
         "source": source,
     }
+    if st.get("play_count"):
+        it["views"] = st["play_count"]
     if extra:
         it.update(extra)
     return it
@@ -234,8 +236,11 @@ def crawl(targets, pages: int = 3, s: dict | None = None, more: bool = False):
                                  message=f"[{adapter.label} · {feed}] {msg}")
                     return True
                 try:
-                    with adapter_context(pw, adapter, s) as page:
-                        found = adapter.discover(page, feed, n_pages, s, progress)
+                    if hasattr(adapter, "needs_browser") and not adapter.needs_browser(feed, s):
+                        found = adapter.discover(None, feed, n_pages, s, progress)
+                    else:
+                        with adapter_context(pw, adapter, s) as page:
+                            found = adapter.discover(page, feed, n_pages, s, progress)
                 except CrawlCancelled:
                     raise
                 except Exception as e:          # isolate: report and continue with the next feed

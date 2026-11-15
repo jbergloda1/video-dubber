@@ -9,7 +9,8 @@ JOBS = DATA / "jobs"
 SETTINGS_FILE = DATA / "settings.json"
 JOBS.mkdir(parents=True, exist_ok=True)
 
-SECRET_KEYS = {"anthropic_api_key", "elevenlabs_api_key", "openai_api_key", "gemini_api_key", "tiktok_client_secret"}
+SECRET_KEYS = {"anthropic_api_key", "elevenlabs_api_key", "openai_api_key", "gemini_api_key", "tiktok_client_secret",
+               "dtk_api_key"}
 
 DEFAULTS = {
     # --- output mode ---
@@ -155,6 +156,10 @@ DEFAULTS = {
     "preview_seconds": 30,
     "wait_for_preview": False,        # pause after preview until you approve
     # --- download ---
+    "dtk_enabled": True,              # Evil0ctal/Douyin_TikTok_Download_API (MCP / REST) when reachable
+    "dtk_url": "http://127.0.0.1:8000",
+    "dtk_api_key": "",
+    "dtk_timeout_s": 45,
     "cookies_file": "",               # optional Netscape cookies.txt for yt-dlp
     "douyin_headless": True,
     "douyin_gap_s": 30,

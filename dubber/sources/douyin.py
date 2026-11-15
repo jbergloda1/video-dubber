@@ -58,16 +58,54 @@ class Douyin(SourceAdapter):
     def handles_url(self, url):
         return "douyin.com" in url
 
+    def needs_browser(self, feed: str, s: dict) -> bool:
+        from .. import dtk_client
+        kind, _, _ = (feed or "").partition(":")
+        if kind == "user" and dtk_client.configured(s):
+            return False
+        return True
+
     def discover(self, page, feed, pages, s, progress):
+        from .. import dtk_client
         from ..trending import _item_from_aweme, _walk_awemes, hot_items
         kind, _, arg = feed.partition(":")
         if kind == "hot":
+            if dtk_client.configured(s):
+                try:
+                    progress(0.2, "Đọc bảng 热榜 qua DTK…")
+                    items = dtk_client.fetch_trending("douyin", "hot", s)
+                    if items:
+                        return items
+                except Exception:
+                    if page is None:
+                        raise
             bucket, stop = _collect(page, "/hot/search/list")
             progress(0.1, "Đọc bảng 热榜…")
             page.goto("https://www.douyin.com/hot", wait_until="domcontentloaded", timeout=45000)
             page.wait_for_timeout(6000)
             stop()
             return hot_items(bucket)
+        if kind == "user":
+            if not dtk_client.configured(s):
+                raise NeedsUser("Quét kênh tác giả Douyin (user:…) cần bật DTK MCP Server trong ⚙ Cài đặt "
+                                "(trình duyệt ẩn bị Douyin chặn 403 ở danh sách video kênh).")
+            out, seen, cursor = [], set(), None
+            for i in range(max(pages, 1)):
+                if i > 0 and progress(0.1 + 0.7 * (i + 1) / pages, f"Cuộn trang {i + 1}/{pages}…") is False:
+                    break
+                if i == 0:
+                    progress(0.1, f"Đọc kênh {arg[:40]} qua DTK MCP…")
+                page_res = dtk_client.list_user_posts("douyin", arg, s, cursor=cursor, count=20)
+                for a in page_res.get("items") or []:
+                    aid = str(a.get("aweme_id") or "")
+                    if aid and aid not in seen:
+                        seen.add(aid)
+                        it = _item_from_aweme(a, "user", {"feed": feed})
+                        out.append(it)
+                cursor = page_res.get("cursor")
+                if not page_res.get("has_more") or not cursor:
+                    break
+            return out
         if kind == "featured":
             bucket, stop = _collect(page, "/module/feed")
             progress(0.1, "Đọc feed 精选…")

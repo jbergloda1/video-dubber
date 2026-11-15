@@ -564,6 +564,55 @@ def douyin_status():
         return {"open": False, "logged_in": None, "error": str(e)}
 
 
+# ------------------------------------------------------------------ DTK MCP / REST (Evil0ctal/Douyin_TikTok_Download_API)
+def _merge_dtk_opts(data: dict | None = None) -> dict:
+    s = config.load()
+    for k, v in ((data or {}).get("options") or (data or {})).items():
+        if k in ("dtk_enabled", "dtk_url", "dtk_api_key", "dtk_timeout_s") and v is not None:
+            if k == "dtk_api_key" and isinstance(v, str) and v.startswith("••"):
+                continue
+            s[k] = v
+    return s
+
+
+@app.get("/api/dtk/status")
+def dtk_status():
+    from . import dtk_client
+    return dtk_client.status(config.load())
+
+
+@app.post("/api/dtk/status")
+def dtk_status_post(data: dict = Body(default={})):
+    from . import dtk_client
+    return dtk_client.status(_merge_dtk_opts(data))
+
+
+@app.post("/api/dtk/test")
+def dtk_test(data: dict = Body(default={})):
+    from . import downloader, dtk_client
+    s = _merge_dtk_opts(data)
+    url = str(data.get("url") or "").strip()
+    t0 = time.time()
+    if not url:
+        st = dtk_client.status(s)
+        st["seconds"] = round(time.time() - t0, 2)
+        return st
+    try:
+        aweme, plat = dtk_client.resolve_aweme(url, s)
+        urls = downloader._play_urls(aweme)
+        return {
+            "ok": True,
+            "platform": plat,
+            "aweme_id": aweme.get("aweme_id"),
+            "title": (aweme.get("desc") or aweme.get("preview_title") or "")[:120],
+            "author": (aweme.get("author") or {}).get("nickname", ""),
+            "streams": len(urls),
+            "seconds": round(time.time() - t0, 2),
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:300], "seconds": round(time.time() - t0, 2)}
+
+
 # ------------------------------------------------------------------ trending (crawl list only; you decide what to run)
 @app.get("/api/trending")
 def trending_list():

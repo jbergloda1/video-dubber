@@ -16,6 +16,18 @@ def is_douyin(url: str) -> bool:
     return "douyin.com" in url or "iesdouyin.com" in url
 
 
+def is_tiktok(url: str) -> bool:
+    return bool(re.search(r"(?:tiktok\.com|vm\.tiktok\.com|vt\.tiktok\.com)/", url or "", re.I))
+
+
+def is_bilibili(url: str) -> bool:
+    return bool(re.search(r"(?:bilibili\.com|b23\.tv|bili2233\.cn)/", url or "", re.I))
+
+
+def is_dtk_supported(url: str) -> bool:
+    return is_douyin(url) or is_tiktok(url) or is_bilibili(url)
+
+
 def is_youtube(url: str) -> bool:
     return bool(re.search(r"(?:youtube\.com|youtu\.be)/", url or "", re.I))
 
@@ -81,7 +93,19 @@ def _facebook(job, url, out: Path, s):
 
 
 def stream_info(url, s):
-    """Direct stream URL + required HTTP headers via yt-dlp (no download) — for the quick preview."""
+    """Direct stream URL + required HTTP headers via DTK MCP (when enabled) or yt-dlp (no download) — for quick preview."""
+    from . import dtk_client
+    url = extract_url(url)
+    if is_dtk_supported(url) and dtk_client.configured(s):
+        try:
+            aweme, plat = dtk_client.resolve_aweme(url, s)
+            urls = preview_urls(aweme)
+            if urls:
+                ref = ("https://www.bilibili.com/" if plat == "bilibili"
+                       else "https://www.tiktok.com/" if plat == "tiktok" else "https://www.douyin.com/")
+                return urls[0], {"User-Agent": UA, "Referer": ref}, aweme.get("desc") or aweme.get("preview_title") or ""
+        except Exception:
+            pass
     import tempfile
     import yt_dlp
     from .sources import facebook
@@ -133,16 +157,42 @@ def extract_url(text: str) -> str:
 
 
 def download(job, url: str, out: Path, s: dict) -> dict:
+    from . import dtk_client
     url = extract_url(url)
     errors = []
     if is_facebook(url):
         return _facebook(job, url, out, s)
     if not is_douyin(url):
+        if (is_tiktok(url) or is_bilibili(url)) and dtk_client.configured(s):
+            try:
+                hit = _probe_cache.pop(url, None)
+                if hit and time.time() - hit[0] < 600:
+                    aweme, cookies = hit[1], hit[2]
+                else:
+                    aweme, _ = dtk_client.resolve_aweme(url, s)
+                    cookies = []
+                job.log("Tải video qua DTK MCP (không watermark)…")
+                return _download_aweme(job, aweme, cookies, out)
+            except Exception as e:
+                job.log(f"DTK MCP không tải được ({e}), chuyển sang yt-dlp…", "debug")
         try:
             return _ytdlp(job, url, out, s)
         except Exception as e:
             raise RuntimeError(f"yt-dlp không tải được: {e}")
-    # Douyin: yt-dlp needs fresh cookies; try it only when a cookies file is configured
+    # Douyin: try DTK MCP first (when enabled), then yt-dlp with cookies_file, then headless Chromium
+    if dtk_client.configured(s) and not re.search(r"douyin\.com/hot/(\d+)", url):
+        try:
+            hit = _probe_cache.pop(url, None)
+            if hit and time.time() - hit[0] < 600:
+                aweme, cookies = hit[1], hit[2]
+            else:
+                aweme, _ = dtk_client.resolve_aweme(url, s)
+                cookies = []
+            job.log("Tải video Douyin qua DTK MCP (không watermark)…")
+            return _download_aweme(job, aweme, cookies, out)
+        except Exception as e:
+            errors.append(f"dtk: {e}")
+            job.log(f"DTK MCP không lấy được ({e}), chuyển sang phương thức dự phòng…", "debug")
     if s.get("cookies_file"):
         try:
             return _ytdlp(job, url, out, s)
@@ -328,6 +378,7 @@ class _Quiet:
 
 def probe(url, s):
     """Duration / title / author of a video WITHOUT downloading it (for the estimate)."""
+    from . import dtk_client
     url = extract_url(url)
     if is_douyin(url):
         aweme, cookies = resolve_aweme(_Quiet(), url, s, allow_visible=False, use_gap=False)
@@ -337,6 +388,17 @@ def probe(url, s):
         return {"duration": dur / 1000 if dur > 1000 else dur, "title": aweme.get("desc") or "",
                 "uploader": (aweme.get("author") or {}).get("nickname", ""), "platform": "douyin",
                 "width": v.get("width"), "height": v.get("height")}
+    if (is_tiktok(url) or is_bilibili(url)) and dtk_client.configured(s):
+        try:
+            aweme, plat = dtk_client.resolve_aweme(url, s)
+            _probe_cache[url] = (time.time(), aweme, [])
+            v = aweme.get("video") or {}
+            dur = aweme.get("duration") or v.get("duration") or 0
+            return {"duration": dur / 1000 if dur > 1000 else dur, "title": aweme.get("desc") or "",
+                    "uploader": (aweme.get("author") or {}).get("nickname", ""), "platform": plat,
+                    "width": v.get("width"), "height": v.get("height")}
+        except Exception:
+            pass
     import tempfile
     import yt_dlp
     from .sources import facebook
@@ -360,6 +422,15 @@ def resolve_aweme(job, url, s, allow_visible=True, use_gap=True):
     """Get the video's data (title, play URLs…) without downloading it."""
     import shutil
     import tempfile
+    from . import dtk_client
+    if dtk_client.configured(s) and not re.search(r"douyin\.com/hot/(\d+)", url):
+        try:
+            aweme, _ = dtk_client.resolve_aweme(url, s)
+            if _play_urls(aweme):
+                job.log("Lấy được dữ liệu video qua DTK MCP (không cần mở Chrome)")
+                return aweme, []
+        except Exception as e:
+            job.log(f"DTK MCP không lấy được ({e}) → dùng trình duyệt của app", "debug")
     headless = bool(s.get("douyin_headless", True))
     gap = float(s.get("douyin_gap_s") or 0) - (time.time() - _last_fetch[0])
     if use_gap and gap > 0:
@@ -522,7 +593,7 @@ def _download_aweme(job, aweme, cookies, out: Path):
     last = None
     for u in urls:
         try:
-            _http_download(job, u, out, cookie_hdr)
+            _http_download(job, u, out, cookie_hdr, referer=_referer_for(u, aweme))
             if util.duration(out) > 0:
                 break
         except Exception as e:
@@ -638,8 +709,17 @@ def _play_urls(aweme):
     return res
 
 
-def _http_download(job, url, out: Path, cookie=""):
-    req = urllib.request.Request(url, headers={"User-Agent": UA, "Referer": "https://www.douyin.com/",
+def _referer_for(url: str, aweme: dict | None = None) -> str:
+    plat = str(((aweme or {}).get("_dtk") or {}).get("platform") or "").lower()
+    if plat == "bilibili" or "bilivideo" in url or "hdslb" in url or "bilibili" in url:
+        return "https://www.bilibili.com/"
+    if plat == "tiktok" or "tiktok" in url or "byteoversea" in url or "musical.ly" in url:
+        return "https://www.tiktok.com/"
+    return "https://www.douyin.com/"
+
+
+def _http_download(job, url, out: Path, cookie="", referer="https://www.douyin.com/"):
+    req = urllib.request.Request(url, headers={"User-Agent": UA, "Referer": referer,
                                                "Cookie": cookie})
     with urllib.request.urlopen(req, timeout=60) as r, open(out, "wb") as f:
         total = int(r.headers.get("Content-Length") or 0)

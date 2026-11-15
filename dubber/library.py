@@ -57,9 +57,10 @@ def update(iid, **kw):
 
 
 def platform_of(url):
-    from .downloader import is_douyin, is_facebook
+    from .downloader import is_bilibili, is_douyin, is_facebook, is_tiktok
     return "douyin" if is_douyin(url) else "facebook" if is_facebook(url) else \
-        "tiktok" if "tiktok.com" in url else "youtube" if ("youtube.com" in url or "youtu.be" in url) else "web"
+        "tiktok" if is_tiktok(url) else "bilibili" if is_bilibili(url) else \
+        "youtube" if ("youtube.com" in url or "youtu.be" in url) else "web"
 
 
 def split_links(text):
@@ -186,10 +187,20 @@ def _download(iid, s):
     try:
         url = downloader.extract_url(it["url"])
         if downloader.is_douyin(url) and not s.get("cookies_file"):
-            # the browser lookup is one-at-a-time (gentle on Douyin); the file transfer runs in parallel
-            with _douyin_lock:
-                sl = dict(s, douyin_gap_s=float(s.get("library_douyin_gap_s", 8)))
-                aweme, cookies = downloader.resolve_aweme(job, url, sl)
+            from . import dtk_client
+            aweme, cookies = None, []
+            if dtk_client.configured(s) and not re.search(r"douyin\.com/hot/(\d+)", url):
+                try:
+                    aweme, _ = dtk_client.resolve_aweme(url, s)
+                    if not downloader._play_urls(aweme):
+                        aweme = None
+                except Exception as e:
+                    job.log(f"DTK MCP không lấy được ({e}) → dùng trình duyệt của app", "debug")
+            if aweme is None:
+                # the browser lookup is one-at-a-time (gentle on Douyin); the file transfer runs in parallel
+                with _douyin_lock:
+                    sl = dict(s, douyin_gap_s=float(s.get("library_douyin_gap_s", 8)))
+                    aweme, cookies = downloader.resolve_aweme(job, url, sl)
             info = downloader._download_aweme(job, aweme, cookies, out)
             v = aweme.get("video") or {}
             dur = aweme.get("duration") or v.get("duration") or 0

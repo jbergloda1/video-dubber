@@ -77,6 +77,65 @@ def tt_item(a: dict, feed: str) -> dict | None:
             "cover": v.get("cover") or v.get("originCover") or "", "feeds": [feed]}
 
 
+def dtk_tt_item(c: dict, feed: str) -> dict | None:
+    """DTK Content (or converted aweme) -> our TikTok hot record."""
+    from . import dtk_client
+    try:
+        a = dtk_client.content_to_aweme(c)
+    except Exception:
+        return None
+    if a.get("is_image") or not a.get("aweme_id"):
+        return None
+    vid = str(a["aweme_id"])
+    au = a.get("author") or {}
+    st = a.get("statistics") or {}
+    v = a.get("video") or {}
+    uid = au.get("unique_id") or ""
+    dur = a.get("duration") or v.get("duration") or 0
+    covers = (v.get("cover") or {}).get("url_list") or []
+    return {
+        "key": f"tiktok:{vid}",
+        "platform": "tiktok",
+        "id": vid,
+        "url": f"https://www.tiktok.com/@{uid}/video/{vid}" if uid else f"https://www.tiktok.com/video/{vid}",
+        "title": (a.get("desc") or a.get("preview_title") or "").strip(),
+        "author": au.get("nickname") or uid,
+        "author_id": uid,
+        "views": int(st.get("play_count") or 0),
+        "likes": int(st.get("digg_count") or 0),
+        "comments": int(st.get("comment_count") or 0),
+        "shares": int(st.get("share_count") or 0),
+        "duration": round(dur / 1000, 1) if dur > 1000 else dur,
+        "created": int(a.get("create_time") or 0),
+        "cover": covers[0] if covers else "",
+        "feeds": [feed],
+    }
+
+
+def _dtk_tiktok_search(arg: str, pages: int, s: dict) -> list[dict]:
+    from . import dtk_client
+    feed = f"search:{arg}"
+    out, cursor = [], None
+    is_user = arg.startswith("@") or "tiktok.com/@" in arg
+    for i in range(max(pages, 1)):
+        if state["cancel"]:
+            break
+        state.update(progress=0.1 + 0.8 * (i + 1) / max(pages, 1),
+                     message=f"DTK MCP · TikTok “{arg}” (trang {i + 1}/{pages})…")
+        if is_user:
+            res = dtk_client.list_user_posts("tiktok", arg, s, cursor=cursor, count=20)
+        else:
+            res = dtk_client.search_posts("tiktok", arg, s, cursor=cursor, count=20)
+        for raw in res.get("items") or []:
+            it = dtk_tt_item(raw, feed)
+            if it:
+                out.append(it)
+        cursor = res.get("cursor")
+        if not res.get("has_more") or not cursor:
+            break
+    return out
+
+
 def merge(d: dict, items: list[dict]) -> int:
     new = 0
     now = time.time()
@@ -187,10 +246,24 @@ def _tiktok(kind: str, arg: str, pages: int) -> tuple[list[dict], list[str]]:
 
 def crawl(kind: str, arg: str, pages: int = 3):
     """Background thread: one TikTok category or keyword search."""
+    from . import dtk_client
     from .sources import tiktok_web
     state.update(running=True, cancel=False, error="", message="Bắt đầu…", progress=0.0)
     try:
-        items, sugg = _tiktok(kind, arg, pages)
+        s = config.load()
+        items, sugg = [], []
+        if kind == "search" and (arg.startswith("@") or "tiktok.com/@" in arg) and dtk_client.configured(s):
+            try:
+                items = _dtk_tiktok_search(arg, pages, s)
+            except Exception:
+                items = []
+        if not items:
+            items, sugg = _tiktok(kind, arg, pages)
+        if not items and kind == "search" and dtk_client.configured(s):
+            try:
+                items = _dtk_tiktok_search(arg, pages, s)
+            except Exception:
+                pass
         d = load()
         if sugg:
             d["suggest"].pop(arg, None)           # newest last
