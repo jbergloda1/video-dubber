@@ -19,3 +19,13 @@ Khi người dùng bảo "sửa các lỗi trong hàng chờ":
 4. Khởi động lại server bằng `POST /api/admin/restart`, chỉ khi không có job đang chạy.
 
 Mọi ghi chú và đánh giá của người dùng đều nằm trong `data/feedback/log.jsonl` (chỉ ghi thêm, không xoá).
+
+## Cấu trúc giao diện
+
+- `dubber/static/index.html`: chỉ còn HTML. CSS ở `static/app.css`. JS ở `static/js/01-core.js … 10-boot.js`.
+- Các file JS là **script thường nạp theo thứ tự**, không phải ES module: hàm và biến cấp cao nhất dùng chung giữa các file. Không gọi ở cấp cao nhất một hàm khai báo trong file nạp sau.
+- Sửa file tĩnh không cần khởi động lại server (trang tự đổi phiên bản `?v=` theo giờ sửa file). Sửa Python thì cần `POST /api/admin/restart`.
+
+## Đo hiệu năng
+
+`python tools/bench.py` (tuỳ chọn `--since 2026-11-15`): thời gian thật mỗi job và từng bước, so với lần đo trước. Kết quả và các quyết định tối ưu: `docs/PLAN_OPTIMIZE.md` mục 0.

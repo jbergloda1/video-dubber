@@ -2,24 +2,42 @@
 
 Ngày lập: 2026-11-15. Số liệu lấy từ 69 job trong `data/jobs`, trong đó 45 job có đo giờ. Video trung vị dài 232 giây, video dài nhất 38 phút. Chế độ: 40 lồng tiếng, 16 chỉ dịch chữ, 7 chỉ sub, 5 thuyết minh.
 
-## 0. Tiến độ và đính chính (cập nhật 2026-11-15)
+## 0. Kết quả thực hiện (cập nhật 2026-11-15)
 
-**Đính chính sau khi đọc kỹ code và đo lại theo đồng hồ (`python tools/bench.py`):**
-- Thời gian thật của một job là **326 giây (1,73 giây xử lý / giây video)**, không phải 371 giây. Con số cũ cộng dồn các bước, kể cả các bước vốn đã chạy song song.
-- **P1 đã có sẵn từ trước:** dò phụ đề gốc + watermark đã chạy song song với dịch → người nói → tạo giọng. Câu "mọi bước chạy nối tiếp" ở mục 1 là sai.
-- **P3 một phần đã có sẵn:** OCR đã được cấu hình chạy GPU, và bước theo dõi phụ đề đã bỏ qua khung trùng/khung trống. Tuy vậy đo thực tế mỗi lần OCR một dải 960×126 vẫn mất **~270 ms**, chậm như chạy CPU; tắt bộ phân loại góc (`use_cls=False`) chỉ còn ~247 ms và cho kết quả y hệt. Đây là điểm nghẽn thật của bước 132 giây, cần điều tra tiếp (ONNX có thực sự dùng CUDA khi torch đã nạp không).
+**Đính chính sau khi đọc kỹ code và đo theo đồng hồ (`python tools/bench.py`):**
+- Thời gian thật của một job trước khi tối ưu là **326 giây (1,73 giây xử lý / giây video)**, không phải 371 giây. Con số cũ cộng dồn cả các bước chạy song song.
+- **P1 đã có sẵn từ trước:** dò phụ đề gốc + watermark vốn đã chạy song song với dịch → người nói → tạo giọng. Câu "mọi bước chạy nối tiếp" ở mục 1 là sai.
+- **Điểm nghẽn thật của bước dò phụ đề** không phải thiếu GPU: dải phụ đề 960×126 bị engine OCR phóng to thành 5600×736 trước khi dò vùng chữ (136 trong 166 ms mỗi khung).
 
-**Đã làm:**
-- P9: `tools/bench.py` (đo theo đồng hồ, ghi `data/bench/`).
-- P4: tiêu đề + kiểm tra TikTok + xuất file chạy nền; job báo "Xong" ngay khi render xong (phần đuôi này trung vị 64 giây ≈ 20 % thời gian một job). Chạy lại job sẽ tự dừng phần đuôi trước.
-- Ghi `job.json` được giãn ra (trước đây ghi lại cả file cho mỗi dòng log / mỗi nhịp tiến độ).
-- U5: mở job còn 2 request (trước ~12), tab nào mở mới tải; ngừng polling khi tab trình duyệt ẩn; lưới video chỉ vẽ phần đang thấy.
-- U8: một cách hiện số kiểu Việt cho cả app.
-- U1: trang job chia tab Kết quả / Sửa / Đánh giá / Đăng / Nhật ký.
-- U2: gộp Trending + Link hot thành "🔎 Tìm video"; lưới Top có chọn nhiều để chạy hàng loạt.
-- U7: thanh điều hướng dưới đáy trên điện thoại, không cuộn ngang ở 375 px.
+**Đã làm**
 
-**Chưa làm:** P3 (tăng tốc OCR), P6, P5, P2, P7, P8, U3, U4, U6. Chưa đo lại bằng job mới sau P4.
+| Việc | Kết quả đo được |
+|---|---|
+| P9 đo lường | `tools/bench.py`, ghi `data/bench/` |
+| P4 phần sau render chạy nền | Tiêu đề + kiểm tra TikTok + xuất file (trung vị 64 s) không còn chặn chữ "Xong"; job thử: có video ở giây 203, phần nền xong ở giây 249 |
+| P3 OCR dải phụ đề không phóng to | 160–294 → 40–45 ms mỗi khung. Bước theo dõi phụ đề: 104 → 20 s (video 121 s), 139 → 41 s (video 271 s); số dòng 70 → 70 và 126 → 124, chữ giống 99,7 % / 98,3 % |
+| OCR chữ màn hình chạy trong luồng song song | Bước "Dịch chữ màn hình" sau đó chỉ còn dịch (OCR lấy từ cache) |
+| P6 tạo giọng | Clip đã cắt lặng được cache, độ dài đọc từ header WAV, clip mới xử lý 6 luồng (trước: 2 tiến trình cho mỗi câu ở mỗi lần chạy) |
+| P5 chỉ trộn lại tiếng | Khi hình không đổi (đổi nhạc nền / âm lượng / giọng mà phụ đề giữ nguyên mốc), giữ nguyên phần hình (stream copy) cho cả bản chính và bản TikTok. Test với ffmpeg thật: hình giống từng bit. Chưa áp dụng cho job có Biên kịch (có cắt cảnh) |
+| Ghi `job.json` thưa hơn | Trước: ghi lại cả file cho mỗi dòng log / nhịp tiến độ |
+| Video không có lời nói | Tự chuyển sang "Chỉ dịch chữ màn hình" thay vì báo lỗi |
+| U1 trang job chia tab | Mở job còn 2 request (trước ~12) |
+| U2 gộp Trending + Link hot | "🔎 Tìm video"; lưới Top chọn nhiều để chạy hàng loạt |
+| U3 preset | ⚡ Reup nhanh / 🎬 Phim + Biên kịch / 💬 Chỉ sub / ↺ Mặc định |
+| U4 Cài đặt | Ô tìm kiếm lọc các nhóm cài đặt |
+| U5 | Ngừng polling khi tab ẩn; lưới video chỉ vẽ phần đang thấy |
+| U6 tách file | `index.html` 2 900 → 787 dòng; `app.css`; 10 file `static/js/*.js` (script thường, nạp theo thứ tự) |
+| U7 điện thoại | Thanh điều hướng dưới đáy, không cuộn ngang ở 375 px |
+| U8 | Một cách hiện số kiểu Việt |
+
+**Không làm, và lý do**
+- **P2 hàng đợi 2 làn:** sau P4, phần chạy mạng còn lại trên đường găng chỉ là bước dịch; mọi bước nặng khác đều dùng GPU. Cho job thứ hai chạy GPU cùng lúc (tách nhạc trong khi job kia tạo giọng / render) dễ tràn 12 GB VRAM, còn tải Douyin song song dễ bị chặn. Lợi ít, rủi ro cao.
+- **P7 dùng chung kết quả tách nhạc giữa các job:** chỉ có ích khi làm lại đúng một video bằng job mới; chạy lại trong cùng job đã dùng checkpoint.
+- **P8:** các lỗi tải Douyin đều do Douyin đòi xác minh; thông báo hiện tại đã chỉ cách xử lý. Không tự động hoá thêm vì sẽ thành lách chặn.
+
+**Còn hạn chế**
+- Chưa có số "trước/sau" cho cả job trên cùng điều kiện: lần chạy thử, các bước GPU (tách nhạc, render) chậm hơn lịch sử ~40 % vì máy đang chạy ứng dụng khác. Số liệu từng bước ở bảng trên được đo riêng.
+- Đường tắt "chỉ trộn lại tiếng" mới qua test tự động, chưa dùng trên job thật (job cũ chưa lưu dấu vân tay phần hình; áp dụng từ lần render kế tiếp).
 
 ## 1. Hiện trạng
 

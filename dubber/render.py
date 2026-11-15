@@ -501,6 +501,98 @@ def write_srt(lines, path: Path, mode):
             f.write(f"{i+1}\n{tts._ts(a)} --> {tts._ts(b)}\n{text}\n\n")
 
 
+def voice_audio(job, workdir: Path, s, mode, inputs, o):
+    """The sound of the video: background (the separated original, or your own music) + the Vietnamese voice, or
+    the original audio untouched. `o` = index of the input that carries the source audio; the inputs this needs are
+    appended. Returns (inputs, audio filters, map label). Used by the full render and by remix_audio()."""
+    from . import review
+    inputs = list(inputs)
+    bgm = review.bgm_track(workdir, s)       # your own background music (📋 Đánh giá → Nhạc nền)
+    if bgm:
+        job.log("Nhạc nền: dùng nhạc bạn chọn thay nhạc gốc")
+    if mode == "dub":
+        music = bgm or ("no_vocals.wav" if (s["separate_music"] and (workdir / "no_vocals.wav").exists()) else "source.mp4")
+        inputs += ["-i", music, "-i", "voice.wav"]
+        af = [f"[{o + 1}:a]volume={float(s['bg_volume'])}[m0]", f"[{o + 2}:a]volume={float(s['voice_volume'])}[vo0]"]
+        if s.get("bg_duck", True):
+            # duck the background under the Vietnamese voice: clearer speech, hides leftover original voice
+            af += ["[vo0]asplit=2[vo][vsc]",
+                   f"[m0][vsc]{DUCK}[m]"]
+        else:
+            af += ["[m0]anull[m]", "[vo0]anull[vo]"]
+        mixins = "[m][vo]"
+        n = 2
+        keep = s.get("narrator_remove") and music != "source.mp4" and (workdir / "vocals_keep.wav").exists()
+        if keep:
+            # the characters' own voices (narrator removed) at their natural level
+            inputs += ["-i", "vocals_keep.wav"]
+            af.append(f"[{o + 3}:a]volume={float(s.get('character_volume', 1.0))}[ov]")
+            mixins += "[ov]"
+            n = 3
+        elif float(s.get("original_voice_volume") or 0) > 0 and music != "source.mp4":
+            inputs += ["-i", "vocals.wav"]
+            af.append(f"[{o + 3}:a]volume={float(s['original_voice_volume'])}[ov]")
+            mixins += "[ov]"
+            n = 3
+        af.append(f"{mixins}amix=inputs={n}:normalize=0:duration=longest,alimiter=limit=0.95[a]")
+        return inputs, af, "[a]"
+    if mode == "voiceover":
+        inputs, af = voiceover_mix(workdir, s, inputs, o, bgm)
+        return inputs, af, "[a]"
+    return inputs, [], f"{o}:a?"
+
+
+# Settings that only change the SOUND. When nothing else changed since the last render, the picture is kept as it
+# is and only the sound is mixed again (remix_audio): seconds instead of a full encode.
+AUDIO_KEYS = ("bg_volume", "voice_volume", "original_voice_volume", "bg_duck", "vo_original_volume", "vo_music_volume",
+              "character_volume", "bgm_enabled")
+
+
+def remix_audio(job, workdir: Path, s, out_name, step="render") -> bool:
+    """New sound on the already-rendered picture (stream copy) — for a changed music track / volumes / voice timing
+    that left every subtitle cue where it was. Also refreshes the TikTok copy made in the same render.
+    False = cannot (the caller renders in full)."""
+    from . import tiktokcheck as tk
+    mode = s["output_mode"]
+    old = workdir / out_name
+    if mode not in ("dub", "voiceover") or not old.exists() or s.get("content_enabled"):
+        return False
+    dur = util.duration(old)
+    inputs, af, amap = voice_audio(job, workdir, s, mode, ["-i", "source.mp4"], 0)
+    outro = float(s.get("outro_seconds") or 0)
+    if outro > 0:
+        fade_at = max(0.0, dur - outro - 0.6)
+        af.append(f"{amap}apad=whole_dur={dur:.3f},afade=t=out:st={fade_at:.3f}:d=0.6[aout]")
+        amap = "[aout]"
+    tt = workdir / tk.OUT
+    has_tt = tt.exists() and (workdir / tk.PRE).exists()
+    vi = inputs.count("-i")
+    tmp_main, tmp_tt = "remix_" + out_name, "remix_" + tk.OUT
+    inputs += ["-i", out_name]
+    args_tt = []
+    if has_tt:
+        inputs += ["-i", tk.OUT]
+        af.append(f"{amap}asplit=2[amain][atk0];[atk0]{tk.TIKTOK_AF}[atk]")
+        amap = "[amain]"
+        args_tt = ["-map", f"{vi + 1}:v:0", "-c:v", "copy", "-map", "[atk]", *tk.TIKTOK_ACODEC, "-movflags", "+faststart",
+                   "-t", f"{dur:.3f}", tmp_tt]
+    (workdir / "filter_remix.txt").write_text(";".join(af), encoding="utf-8")
+    job.step(step, detail="Hình không đổi → chỉ trộn lại tiếng")
+    args = [*inputs, "-filter_complex_script", "filter_remix.txt", "-map", f"{vi}:v:0", "-c:v", "copy", "-map", amap,
+            "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", "-t", f"{dur:.3f}", tmp_main, *args_tt]
+    try:
+        util.ffmpeg(job, args, duration=dur, step=step, cwd=workdir)
+        os.replace(workdir / tmp_main, old)
+        if has_tt:
+            os.replace(workdir / tmp_tt, tt)
+            tk.mark_premade(workdir, out_name)
+    finally:
+        for f in (tmp_main, tmp_tt):
+            (workdir / f).unlink(missing_ok=True)
+    job.log("Hình không đổi so với lần render trước → chỉ trộn lại tiếng (giữ nguyên phần hình)")
+    return True
+
+
 def render(job, workdir: Path, s, band, out_name, seconds=None, step="render"):
     src = workdir / "source.mp4"
     W0, H0 = util.video_size(src)
@@ -614,41 +706,7 @@ def render(job, workdir: Path, s, band, out_name, seconds=None, step="render"):
     if video_in != "source.mp4":
         inputs += ["-i", "source.mp4"]
         o = 1
-    from . import review
-    bgm = review.bgm_track(workdir, s)       # your own background music (📋 Đánh giá → Nhạc nền)
-    if bgm:
-        job.log("Nhạc nền: dùng nhạc bạn chọn thay nhạc gốc")
-    if mode == "dub":
-        music = bgm or ("no_vocals.wav" if (s["separate_music"] and (workdir / "no_vocals.wav").exists()) else "source.mp4")
-        inputs += ["-i", music, "-i", "voice.wav"]
-        af = [f"[{o + 1}:a]volume={float(s['bg_volume'])}[m0]", f"[{o + 2}:a]volume={float(s['voice_volume'])}[vo0]"]
-        if s.get("bg_duck", True):
-            # duck the background under the Vietnamese voice: clearer speech, hides leftover original voice
-            af += ["[vo0]asplit=2[vo][vsc]",
-                   f"[m0][vsc]{DUCK}[m]"]
-        else:
-            af += ["[m0]anull[m]", "[vo0]anull[vo]"]
-        mixins = "[m][vo]"
-        n = 2
-        keep = s.get("narrator_remove") and music != "source.mp4" and (workdir / "vocals_keep.wav").exists()
-        if keep:
-            # the characters' own voices (narrator removed) at their natural level
-            inputs += ["-i", "vocals_keep.wav"]
-            af.append(f"[{o + 3}:a]volume={float(s.get('character_volume', 1.0))}[ov]")
-            mixins += "[ov]"
-            n = 3
-        elif float(s.get("original_voice_volume") or 0) > 0 and music != "source.mp4":
-            inputs += ["-i", "vocals.wav"]
-            af.append(f"[{o + 3}:a]volume={float(s['original_voice_volume'])}[ov]")
-            mixins += "[ov]"
-            n = 3
-        af.append(f"{mixins}amix=inputs={n}:normalize=0:duration=longest,alimiter=limit=0.95[a]")
-        amap = "[a]"
-    elif mode == "voiceover":
-        inputs, af = voiceover_mix(workdir, s, inputs, o, bgm)
-        amap = "[a]"
-    else:
-        af, amap = [], f"{o}:a?"
+    inputs, af, amap = voice_audio(job, workdir, s, mode, inputs, o)
     # original audio is kept as is (bit-exact) when the container allows it — no needless re-encode
     acodec = ["-c:a", "aac", "-b:a", "192k"]
     if mode not in ("dub", "voiceover"):

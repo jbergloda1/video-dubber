@@ -276,9 +276,12 @@ def run(job) -> str:
                            else "Không thấy watermark" + (f" (giữ {len(manual)} vùng bạn vẽ)" if manual else ""))
                     end("watermark", det)
                     cp.save("watermark", k_wm, [], det)
-        # Biên kịch reads the on-screen text before the translation (after the watermark pass: same OCR cache file)
-        if content_on and s.get("screen_text"):
+        # The on-screen text is OCRed here too, beside translate → tts (it used to run after the voice was made,
+        # ~35 s on the critical path). Biên kịch reads it before the translation; the screen_text step later finds
+        # it in the cache and only translates.
+        if s.get("screen_text") and should("screen_text"):
             try:
+                job.step("screen_text", detail="OCR (song song với phần âm thanh)…")
                 screen_ocr()
             finally:
                 pic["ocr"].set()
@@ -337,10 +340,20 @@ def run(job) -> str:
             data = asr.transcribe(job, d / "audio16k.wav", total, s)
             _wr(d / "asr.json", data)
             if not data["lines"]:
-                raise RuntimeError("Không nhận dạng được lời nói nào trong video")
-            det = f"{len(data['lines'])} câu, ngôn ngữ: {data['language']}"
-            end("transcribe", det)
-            cp.save("transcribe", k_asr, ["asr.json"], det)
+                # nothing is said in this video: dubbing / subtitling it makes no sense, but its on-screen text can
+                # still be translated — carry on in that mode instead of failing the job
+                job.log("Video không có lời nói → chuyển sang “Chỉ dịch chữ trên màn hình” (giữ hình và âm thanh gốc)", "warn")
+                end("transcribe", "Không có lời nói → chỉ dịch chữ trên màn hình")
+                job.options["output_mode"] = mode = "text"
+                text_only = True
+                s = dict(job.settings(), screen_text=True, burn_subtitles=False)
+                for sid in SPEECH_STEPS:
+                    if STEP_IDS.index(sid) > STEP_IDS.index("transcribe"):
+                        skip(sid, "Không cần (video không có lời nói)")
+            else:
+                det = f"{len(data['lines'])} câu, ngôn ngữ: {data['language']}"
+                end("transcribe", det)
+                cp.save("transcribe", k_asr, ["asr.json"], det)
     asr_data = _rd(d / "asr.json") if (d / "asr.json").exists() else None
 
     start_picture(asr_data["language"] if asr_data else None)
@@ -697,6 +710,22 @@ def run(job) -> str:
                       {k: v for k, v in s.items() if not k.startswith(("tiktok_", "library_", "crawl_"))},
                       ck.code("render", "textclean", "brand", "watermark", "tts"))
 
+    def picture_key(name):
+        """Everything that decides the PICTURE of the final video (None = no audio-only shortcut for this job)."""
+        if mode not in VOICED or s.get("content_enabled"):
+            return None
+        cues = render.sub_cues(lines, mode) if lines else []
+        hold = 0.0
+        if (d / "voice.wav").exists():
+            hold = round(max(0.0, util.duration(d / "voice.wav") - util.duration(d / "source.mp4")), 2)
+        vis = {k: v for k, v in s.items() if k not in render.AUDIO_KEYS
+               and not k.startswith(("tiktok_", "library_", "crawl_", "tts_", "edge_", "elevenlabs_", "piper_", "google_",
+                                     "vieneu_", "translate_", "content_", "whisper_"))}
+        return ck.key("picture", name, cues, hold, band, vis,
+                      {f: ck.fp(d / f) for f in ("source.mp4", "screentext.json", "subband.json", subdetect.EVENTS_FILE,
+                                                 watermark.FILE)},
+                      ck.code("render", "textclean", "brand", "watermark", "subsplit"))
+
     if mode == "sub" and not s.get("burn_subtitles"):
         # "Chỉ Sub Việt" without subtitles would just copy the original video
         job.log("Chế độ Chỉ Sub Việt nhưng đang tắt “Gắn phụ đề Việt” → vẫn gắn phụ đề (không thì video giống hệt bản gốc)", "warn")
@@ -729,11 +758,26 @@ def run(job) -> str:
             job.add_file(key, name)
         else:
             begin("render")
-            render.render(job, d, s, band, name, step="render")
+            # same PICTURE as the last render (only music / volumes / voice sound changed)? then keep it and mix
+            # the sound again instead of encoding the whole video
+            vk = picture_key(name)
+            last = cp.data.get("render") or {}
+            remixed = False
+            if (vk and "render" not in cp.force and (last.get("data") or {}).get("vkey") == vk
+                    and ck.fp(d / name) == (last.get("out") or {}).get(name)):
+                try:
+                    remixed = render.remix_audio(job, d, s, name)
+                except Exception as e:
+                    from .jobs import Cancelled
+                    if isinstance(e, Cancelled):
+                        raise
+                    job.log(f"Không trộn lại tiếng được ({str(e).splitlines()[0][:150]}) → render đầy đủ", "warn")
+            if not remixed:
+                render.render(job, d, s, band, name, step="render")
             job.add_file(key, name)
-            det = f"{(d / name).stat().st_size / 1e6:.0f} MB"
+            det = f"{(d / name).stat().st_size / 1e6:.0f} MB" + (" (chỉ trộn lại tiếng)" if remixed else "")
             end("render", det)
-            cp.save("render", k_rd, [name], det)
+            cp.save("render", k_rd, [name], det, data={"vkey": vk})
 
     def finish():
         """Post-render steps: title & hashtags, TikTok check, readable copies. The video is already there, so the

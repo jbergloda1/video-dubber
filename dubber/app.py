@@ -53,7 +53,20 @@ def _startup():
 
 @app.get("/", response_class=HTMLResponse)
 def index():
-    return (STATIC / "index.html").read_text(encoding="utf-8")
+    # the page itself is never cached; its CSS / JS files are, under a version that changes whenever one is edited
+    files = [STATIC / "app.css", *sorted((STATIC / "js").glob("*.js"))] if (STATIC / "js").exists() else []
+    v = str(int(max((f.stat().st_mtime for f in files if f.exists()), default=0)))
+    html = (STATIC / "index.html").read_text(encoding="utf-8").replace("__V__", v)
+    return HTMLResponse(html, headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/static/{path:path}")
+def static_file(path: str):
+    p = (STATIC / path).resolve()
+    if STATIC.resolve() not in p.parents or not p.is_file() or p.suffix not in (".js", ".css", ".png", ".svg", ".ico", ".woff2"):
+        raise HTTPException(404)
+    mt = {".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8"}.get(p.suffix)
+    return FileResponse(p, media_type=mt, headers={"Cache-Control": "public, max-age=31536000, immutable"})
 
 
 # ------------------------------------------------------------------ settings & voices

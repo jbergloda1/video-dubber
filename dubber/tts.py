@@ -3,6 +3,8 @@ import asyncio
 import hashlib
 import json
 import logging
+import os
+import subprocess
 import threading
 import time
 import urllib.error
@@ -376,14 +378,23 @@ def generate(job, lines, total, s, workdir: Path):
         if i != first[orig[i]]:
             clips[i] = clips[first[orig[i]]]
 
-    # trim silence + measure
+    # trim silence + measure. The trimmed clip is cached beside the clip (same text + voice → same file), so a rerun
+    # that changed one line trims one clip instead of all of them; new clips are trimmed 6 at a time and the length
+    # is read from the WAV header (this used to be 2 processes per line on every run: ~4 min for 800 lines).
+    wavs = [trimmed_path(c) for c in clips]
+    need = sorted({k for k, w in enumerate(wavs) if not w.exists() or w.stat().st_mtime < clips[k].stat().st_mtime},
+                  key=lambda k: str(wavs[k]))
+    need = [k for n_, k in enumerate(need) if n_ == 0 or wavs[k] != wavs[need[n_ - 1]]]      # one job per file
+    if need:
+        from concurrent.futures import ThreadPoolExecutor
+
+        def trim(k):
+            job.check_cancel()
+            trim_clip(clips[k], wavs[k])
+        with ThreadPoolExecutor(6) as ex:
+            list(ex.map(trim, need))
     for i, l in enumerate(lines):
-        wav = tdir / f"{i:04d}.wav"
-        util.run(job, ["ffmpeg", "-v", "error", "-y", "-i", clips[i], "-af",
-                       "silenceremove=start_periods=1:start_threshold=-45dB,areverse,"
-                       "silenceremove=start_periods=1:start_threshold=-45dB,areverse",
-                       "-ar", "44100", "-ac", "1", wav])
-        l["tdur"] = util.duration(wav)
+        l["tdur"] = wav_seconds(wavs[i])
     job.step("tts", progress=0.8, detail="Căn thời gian")
 
     # schedule: start at the source phrase start (or right after the previous clip), speed up if needed
@@ -409,14 +420,45 @@ def generate(job, lines, total, s, workdir: Path):
         job.log(f"Cảnh báo: giọng đọc dài hơn video {cursor - total:.1f}s (quá {MAX_EXTEND:.0f}s), đoạn cuối sẽ bị cắt",
                 "warn")
 
-    mix_voice(job, lines, tdir, workdir, vlen)
+    mix_voice(job, lines, tdir, workdir, vlen, wavs)
     write_srt(lines, workdir / "subs.srt")
     job.step("tts", progress=1.0)
     return lines
 
 
-def mix_voice(job, lines, tdir, workdir, vlen):
+TRIM_AF = ("silenceremove=start_periods=1:start_threshold=-45dB,areverse,"
+           "silenceremove=start_periods=1:start_threshold=-45dB,areverse")
+
+
+def trimmed_path(clip: Path) -> Path:
+    return clip.with_name(clip.stem + ".trim.wav")
+
+
+def trim_clip(clip: Path, out: Path):
+    """Leading / trailing silence removed, 44.1 kHz mono. Written to a temp name first: an interrupted run never
+    leaves a half-written file in the cache."""
+    tmp = out.with_name(out.stem + f".{os.getpid()}.{threading.get_ident()}.tmp.wav")
+    try:
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(clip), "-af", TRIM_AF, "-ar", "44100", "-ac", "1",
+                        str(tmp)], check=True, capture_output=True, creationflags=util.CREATE_NO_WINDOW)
+        os.replace(tmp, out)
+    finally:
+        if tmp.exists():
+            tmp.unlink()
+
+
+def wav_seconds(path: Path) -> float:
+    import wave
+    try:
+        with wave.open(str(path), "rb") as w:
+            return w.getnframes() / float(w.getframerate() or 1)
+    except (wave.Error, EOFError):
+        return util.duration(path)          # not plain PCM: ask ffprobe
+
+
+def mix_voice(job, lines, tdir, workdir, vlen, wavs=None):
     n = len(lines)
+    wavs = wavs or [tdir / f"{i:04d}.wav" for i in range(n)]
     # mix: atempo per clip + adelay, then sum. Every clip is an ffmpeg input, and Windows limits a command line to
     # 32 767 characters — a long video (832 lines) failed with WinError 206. Mix in groups of MIX_GROUP clips into
     # part files, then sum the parts (amix with normalize=0 is a plain sum, so the result is the same).
@@ -426,7 +468,7 @@ def mix_voice(job, lines, tdir, workdir, vlen):
         inputs, filt = [], []
         for j, i in enumerate(idx):
             l = lines[i]
-            inputs += ["-i", tdir / f"{i:04d}.wav"]
+            inputs += ["-i", wavs[i]]
             ms = int(l["vstart"] * 1000)
             filt.append(f"[{j}:a]atempo={l['speed']:.4f},adelay={ms}|{ms}[d{j}]")
         mix = "".join(f"[d{j}]" for j in range(len(idx)))

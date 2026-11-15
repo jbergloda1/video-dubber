@@ -43,6 +43,35 @@ def _engine():
     return _ocr
 
 
+_strip = None
+STRIP_SIDE = 960
+
+
+def _strip_engine():
+    """OCR for the subtitle STRIP (e.g. 960×126). The default engine resizes every image so that its SHORT side is
+    736 px: fine for whole frames, but it blew the strip up to 5600×736 and text detection took 136 of 166 ms per
+    frame. This engine limits the LONG side instead (no upscaling): 40–45 ms per frame, same frames read, and
+    cleaner text (measured on 3 jobs, 540 strips). A separate instance, so other threads using the default
+    engine (watermark / screen-text OCR, the TikTok check) are not affected."""
+    global _strip
+    if _strip is None:
+        base = _engine()
+        from rapidocr_onnxruntime import RapidOCR
+        kw = {"det_limit_type": "max", "det_limit_side_len": STRIP_SIDE}
+        try:
+            if base.device == "GPU":
+                _strip = RapidOCR(det_use_cuda=True, cls_use_cuda=True, rec_use_cuda=True, **kw)
+                if _strip.text_det.infer.session.get_providers()[0] != "CUDAExecutionProvider":
+                    raise RuntimeError("CUDA EP did not load")
+            else:
+                _strip = RapidOCR(**kw)
+            if _strip.text_det.limit_type != "max":           # the option was not understood: keep the old behaviour
+                _strip = base
+        except Exception:
+            _strip = base
+    return _strip
+
+
 def detect(job, video: Path, dur: float, lang: str, samples: int = 16):
     """Return band {x0,x1,y0,y1} as fractions of the frame, or None if no burned subtitles."""
     W, H = util.video_size(video)
@@ -122,7 +151,7 @@ def track_lines(job, video: Path, dur: float, band: dict, lang: str, interval: f
     k = min(1.0, 960 / W)
     w = int(W * k) // 2 * 2
     sh = int((sy1 - sy0) * H * k) // 2 * 2
-    ocr = _engine()
+    ocr = _strip_engine()
     cjk = lang in ("zh", "ja", "yue")
     frames = []
     last, last_mask, n_ocr, since_ocr = None, None, 0, 0
@@ -159,7 +188,7 @@ def track_lines(job, video: Path, dur: float, band: dict, lang: str, interval: f
                     since_ocr += 1
                     continue
             since_ocr = 0
-            res, _ = ocr(str(f))
+            res, _ = ocr(str(f), use_cls=False)      # subtitles are never rotated: skip the angle classifier
             n_ocr += 1
             lines, weak = [], []
             for box, text, score in res or []:
