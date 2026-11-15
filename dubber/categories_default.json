@@ -1,0 +1,36 @@
+{
+  "_help": "Danh mục chủ đề (sửa được). Mỗi mục: id, name, children (tuỳ chọn). 'sources.<nền tảng>.feeds' = nơi lấy video (Douyin: hot, featured, tab:<tên tab 精选>, search:<từ khoá>; Facebook: page:<URL trang>). 'match' = từ khoá (không phân biệt hoa thường) để xếp video vào mục; mục có 'match' nhận video từ BẤT KỲ nguồn nào khớp từ khoá; mục không có 'match' nhận mọi video từ các feed của nó. Mục con kế thừa 'sources' của mục cha.",
+  "categories": [
+    {"id": "sports", "name": "Thể thao", "sources": {"douyin": {"feeds": ["tab:体育"]}},
+     "children": [
+       {"id": "football", "name": "Bóng đá", "match": ["足球", "欧冠", "英超", "西甲", "意甲", "德甲", "欧国联", "世界杯", "国足", "梅西", "C罗", "姆巴佩", "哈兰德", "进球", "点球", "门将"]},
+       {"id": "tennis", "name": "Quần vợt", "match": ["网球", "郑钦文", "德约", "辛纳", "阿尔卡拉斯", "大满贯", "温网", "澳网", "法网", "美网"]},
+       {"id": "basketball", "name": "Bóng rổ", "match": ["篮球", "NBA", "CBA", "詹姆斯", "库里", "扣篮", "三分"]},
+       {"id": "table_tennis", "name": "Bóng bàn", "match": ["乒乓", "樊振东", "孙颖莎", "王楚钦", "马龙", "陈梦"]},
+       {"id": "motorsport", "name": "Đua xe", "match": ["F1", "赛车", "摩托", "拉力", "曼岛"]}
+     ]},
+    {"id": "history", "name": "Lịch sử", "sources": {"douyin": {"feeds": ["tab:知识", "tab:公开课"]}},
+     "match": ["历史", "古代", "皇帝", "王朝", "朝代"],
+     "children": [
+       {"id": "world_history", "name": "Lịch sử thế giới", "match": ["世界史", "二战", "一战", "罗马", "拿破仑", "欧洲史", "美国历史", "古埃及", "希特勒", "苏联"]},
+       {"id": "chinese_history", "name": "Lịch sử Trung Quốc", "match": ["中国历史", "三国", "秦始皇", "汉朝", "唐朝", "宋朝", "元朝", "明朝", "清朝", "春秋", "战国", "曹操", "诸葛亮"]},
+       {"id": "vietnam_history", "name": "Lịch sử Việt Nam", "match": ["越南", "安南", "交趾", "胡志明", "Việt Nam"]}
+     ]},
+    {"id": "finance", "name": "Kinh tế & Tài chính", "sources": {"douyin": {"feeds": ["tab:知识"]}},
+     "match": ["经济", "金融", "财经", "投资", "理财"],
+     "children": [
+       {"id": "gold", "name": "Giá vàng", "match": ["金价", "黄金", "金条", "金饰"]},
+       {"id": "stocks", "name": "Chứng khoán", "match": ["股市", "A股", "股票", "美股", "港股", "基金", "大盘", "涨停"]},
+       {"id": "economy_news", "name": "Tin kinh tế", "match": ["GDP", "央行", "降息", "加息", "通胀", "关税", "房价", "油价"]}
+     ]},
+    {"id": "ai", "name": "Phim AI & nội dung AI", "sources": {"douyin": {"feeds": ["tab:影视", "tab:知识", "tab:二次元"]}},
+     "match": ["AI", "人工智能", "AIGC", "AI短剧", "AI动画", "AI生成", "Sora", "可灵", "即梦", "数字人"]},
+    {"id": "documentary", "name": "Phim tài liệu", "sources": {"douyin": {"feeds": ["tab:知识", "tab:影视", "tab:动物"]}},
+     "match": ["纪录片", "纪实", "自然", "动物世界", "探秘", "揭秘", "宇宙", "地球"]},
+    {"id": "tech", "name": "Công nghệ", "sources": {"douyin": {"feeds": ["tab:知识", "tab:汽车", "featured"]}},
+     "match": ["科技", "数码", "芯片", "手机评测", "新手机", "新机", "折叠屏", "数码测评", "科技测评", "电脑测评", "拆机", "机器人", "iPhone", "苹果手机", "华为", "小米手机", "小米汽车", "雷军", "电脑", "笔记本", "显卡", "平板", "无人机", "特斯拉", "比亚迪", "新能源", "智驾", "黑科技"]},
+    {"id": "food", "name": "Ẩm thực", "sources": {"douyin": {"feeds": ["tab:美食"]}}},
+    {"id": "travel", "name": "Du lịch", "sources": {"douyin": {"feeds": ["tab:旅行"]}}},
+    {"id": "movies", "name": "Phim & giải trí", "sources": {"douyin": {"feeds": ["tab:影视", "tab:小剧场"]}}}
+  ]
+}

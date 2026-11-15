@@ -1,0 +1,28 @@
+fastapi
+uvicorn[standard]
+python-multipart
+yt-dlp
+playwright
+faster-whisper
+demucs
+# Better voice/background split (BS-RoFormer). Install WITHOUT deps so pip does not replace the CUDA torch:
+#   pip install --no-deps audio-separator==0.48.0 rotary-embedding-torch==0.6.5 diffq-fixed==0.2.4 onnx2torch-py313==1.6.0
+#   pip install beartype==0.18.5 ml_collections pydub resampy samplerate==0.1.0
+soundfile
+edge-tts
+gTTS
+click>=8.4.2
+rapidocr_onnxruntime
+# OCR on GPU: replace the CPU onnxruntime with the CUDA-12 build (matches PyTorch cu128):
+#   pip uninstall -y onnxruntime && pip install onnxruntime-gpu==1.22.0
+# (onnxruntime-gpu >= 1.24 is built for CUDA 13 and will silently fall back to CPU here)
+anthropic
+deep-translator
+piper-tts
+librosa
+speechbrain
+scikit-learn
+psutil
+# PyTorch with CUDA (for demucs / speechbrain on the RTX GPU) — install AFTER the rest,
+# because other packages may pull in the CPU-only build:
+#   pip install --force-reinstall --no-deps torch torchaudio --index-url https://download.pytorch.org/whl/cu128

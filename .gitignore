@@ -1,0 +1,9 @@
+data/
+__pycache__/
+*.pyc
+/final/
+/vendor/pydeps/
+/.pytest_cache/
+.env
+.env.*
+!.env.example
