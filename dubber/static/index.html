@@ -482,68 +482,41 @@
   <div style="padding:12px 16px"><video id="lpVideo" controls playsinline style="max-height:70vh;width:100%"></video></div>
 </dialog>
 
-<!-- ============ TRENDING ============ -->
-<div id="trendView" hidden>
- <div class="tlayout">
-  <aside class="card tcats">
-    <h2 style="display:flex;justify-content:space-between;align-items:center">Chủ đề <button id="btnEditCats" title="Sửa danh mục" style="padding:3px 8px">✏</button></h2>
-    <div id="tCats"></div>
-  </aside>
-  <div>
-  <div class="card">
-    <div class="ttools">
-      <b id="tCatTitle">Tất cả video</b>
-      <button class="primary" id="crawlCat" hidden>🔄 Lấy video cho chủ đề này</button>
-      <button id="crawlMore" hidden title="Lấy sâu hơn (cuộn thêm) từ đúng nguồn vừa lấy">➕ Tải thêm</button>
-      <button id="crawlStop" class="danger" hidden>■ Dừng</button>
-      <div style="flex:1"></div>
-      <select id="tFeed" title="Lấy từ một nguồn cụ thể"></select>
-      <button id="crawlFeed">Lấy từ nguồn này</button>
-      <label class="hint" style="margin:0">số trang <input type="number" id="crawlPages" value="3" min="1" max="10" style="width:56px"></label>
-    </div>
-    <div class="tstate" id="tState"></div>
-    <div class="ttools" style="margin-top:12px">
-      <input type="text" id="tSearch" class="grow" placeholder="Tìm theo tiêu đề / tác giả…">
-      <select id="tSource"><option value="">Mọi nguồn</option></select>
-      <select id="tSort"><option value="hot">Sắp xếp: độ hot</option><option value="likes">Lượt thích</option><option value="new">Mới crawl</option><option value="short">Ngắn nhất</option><option value="created">Mới đăng</option></select>
-      <label class="hint" style="margin:0">Thích ≥ <input type="number" id="tMinLikes" value="0" min="0" step="1000" style="width:90px"></label>
-      <label class="hint" style="margin:0">Dài ≤ <input type="number" id="tMaxDur" value="0" min="0" step="30" style="width:70px"> giây</label>
-      <label class="chk" style="margin:0"><input type="checkbox" id="tHideDone" checked> Ẩn video đã chạy</label>
-      <label class="chk" style="margin:0"><input type="checkbox" id="tShowHidden"> Hiện mục đã ẩn</label>
-      <span class="hint" id="tCount"></span>
-    </div>
+<!-- ============ FIND VIDEO (HOT + TRENDING) ============ -->
+<div class="findbar" id="findBar" hidden>
+  <div class="hseg" id="findSeg">
+    <button data-s="hot">🔥 Khám phá &amp; Tìm nhanh (TikTok · Douyin)</button>
+    <button data-s="trend">📚 Kho nguồn &amp; Bộ lọc sâu (Douyin · Facebook Reels · Chủ đề)</button>
   </div>
-  <div class="tgrid" id="tGrid"></div>
-  <div class="empty" id="tEmpty" hidden>Chưa có video trong mục này. Chọn một chủ đề bên trái rồi bấm <b>🔄 Lấy video cho chủ đề này</b>, hoặc chọn một nguồn và bấm <b>Lấy từ nguồn này</b> — việc này chỉ lấy danh sách, chưa tải hay xử lý video nào.</div>
-  </div>
- </div>
+  <span class="hint find-hint">Mẹo: Nhập từ khoá, <code>@username</code> TikTok, link kênh Douyin hoặc Page Facebook để quét danh sách → bấm <b>📦 Lưu kho</b> hoặc <b>🎙 Làm ngay</b>.</span>
 </div>
-<div class="findbar" id="findBar" hidden><div class="hseg" id="findSeg"><button data-s="hot">🚀 Top · Trending · Từ khoá</button><button data-s="trend">📚 Thư viện đã lấy (lọc, nguồn, Facebook)</button></div></div>
+
 <div id="hotView" hidden>
  <div class="tlayout">
   <aside class="card tcats">
-    <div class="hseg" id="hPlat"><button data-p="tiktok" class="on">TikTok VN</button><button data-p="douyin">Douyin</button></div>
-    <h2 style="margin-top:12px">Thể loại</h2>
+    <div class="hseg" id="hPlat"><button data-p="tiktok" class="on">🎵 TikTok VN</button><button data-p="douyin">🇨🇳 Douyin</button></div>
+    <div class="hseg" id="hMode" style="margin-top:8px"><button data-m="top" class="on">🏆 Theo chủ đề</button><button data-m="ins">📈 Bảng Hot</button></div>
+    <h2 style="margin-top:12px">Thể loại / Chủ đề</h2>
     <div id="hCats"></div>
   </aside>
   <div>
   <div class="card">
-    <div class="hseg" id="hMode"><button data-m="top" class="on">🏆 Top theo thể loại</button><button data-m="ins">📈 Insights trending</button><button data-m="kw">🔎 Từ khoá</button></div>
-    <div class="ttools" id="hTopBar" style="margin-top:12px">
-      <b id="hTitle">Tất cả</b>
-      <button class="primary" id="hCrawl">🔄 Lấy video mới</button>
-      <button id="hStop" class="danger" hidden>■ Dừng</button>
-      <label class="hint" style="margin:0">số trang <input type="number" id="hPages" value="3" min="1" max="10" style="width:56px"></label>
-      <div style="flex:1"></div>
-      <select id="hSort"><option value="views">Lượt xem</option><option value="rising">Tăng nhanh (view/giờ)</option><option value="likes">Lượt thích</option><option value="new">Mới đăng</option></select>
-      <select id="hLimit"><option value="10">Top 10</option><option value="20">Top 20</option><option value="50">Top 50</option><option value="0">Tất cả</option></select>
-      <label class="hint" style="margin:0">Dài ≤ <input type="number" id="hMaxDur" value="0" min="0" step="30" style="width:66px"> giây</label>
-      <button id="hCopyAll" title="Copy link của các video đang hiện">📋 Copy link</button>
-    </div>
-    <div class="ttools" id="hKwBar" style="margin-top:12px" hidden>
-      <input type="text" id="hQ" class="grow" placeholder="Từ khoá (vd: công nghệ, review điện thoại, mẹo bếp…)">
+    <div class="ttools find-searchbar" id="hKwBar">
+      <input type="text" id="hQ" class="grow" placeholder="🔎 Nhập từ khoá (vd: công nghệ, mẹo bếp, 搞笑), @username TikTok hoặc dán link kênh Douyin…">
+      <button id="hQClear" class="shrink" hidden title="Xoá từ khoá">✕</button>
       <button class="primary" id="hSearch">🔎 Tìm trên TikTok</button>
-      <span class="hint">Lọc ngay trong các video đã lấy (TikTok + Douyin); tìm trên TikTok cần đăng nhập TikTok.</span>
+    </div>
+    <div class="ttools" id="hTopBar" style="margin-top:10px">
+      <b id="hTitle">Tất cả</b>
+      <button class="primary" id="hCrawl">🔄 Lấy video chủ đề này</button>
+      <button id="hStop" class="danger" hidden>■ Dừng</button>
+      <label class="hint" style="margin:0">Số trang <input type="number" id="hPages" value="3" min="1" max="10" style="width:54px"></label>
+      <div style="flex:1"></div>
+      <select id="hSort" title="Sắp xếp"><option value="views">👁 Lượt xem</option><option value="rising">⚡ Tăng nhanh (view/giờ)</option><option value="likes">❤ Lượt thích</option><option value="new">🕒 Mới đăng</option></select>
+      <select id="hLimit" title="Số video mỗi trang"><option value="12">12 / trang</option><option value="24" selected>24 / trang</option><option value="48">48 / trang</option><option value="0">Hiện tất cả</option></select>
+      <label class="hint" style="margin:0">Dài ≤ <input type="number" id="hMaxDur" value="0" min="0" step="30" style="width:64px"> giây</label>
+      <button id="hSelAll" title="Chọn/bỏ chọn các video ở trang hiện tại">☑ Chọn trang này</button>
+      <button id="hCopyAll" title="Copy link của các video đang lọc">📋 Copy link</button>
     </div>
     <div class="chips" id="hSugg"></div>
     <div class="tstate" id="hState"></div>
@@ -560,7 +533,49 @@
     <h2 style="margin:16px 0 0">⚡ Đang tăng nhanh nhất (TikTok, view/giờ)</h2>
   </div>
   <div class="tgrid" id="hGrid"></div>
+  <div class="pager" id="hPager" hidden></div>
   <div class="empty" id="hEmpty" hidden></div>
+  </div>
+ </div>
+</div>
+
+<!-- ============ TRENDING ============ -->
+<div id="trendView" hidden>
+ <div class="tlayout">
+  <aside class="card tcats">
+    <h2 style="display:flex;justify-content:space-between;align-items:center">Chủ đề <button id="btnEditCats" title="Sửa danh mục &amp; từ khoá phân loại" style="padding:3px 8px">✏ Sửa</button></h2>
+    <div id="tCats"></div>
+  </aside>
+  <div>
+  <div class="card">
+    <div class="ttools">
+      <b id="tCatTitle">Tất cả video</b>
+      <button class="primary" id="crawlCat" hidden>🔄 Lấy video cho chủ đề này</button>
+      <button id="crawlMore" hidden title="Lấy sâu hơn (cuộn thêm) từ đúng nguồn vừa lấy">➕ Tải thêm</button>
+      <button id="crawlStop" class="danger" hidden>■ Dừng</button>
+      <div style="flex:1"></div>
+      <select id="tFeed" title="Chọn nguồn cần lấy"></select>
+      <input type="text" id="tFeedInput" placeholder="Từ khoá Douyin, link kênh Douyin hoặc link Page Facebook…" style="min-width:220px;flex:1;max-width:340px">
+      <button class="primary" id="crawlFeed">🔄 Lấy từ nguồn này</button>
+      <label class="hint" style="margin:0">Số trang <input type="number" id="crawlPages" value="3" min="1" max="10" style="width:54px"></label>
+    </div>
+    <div class="tstate" id="tState"></div>
+    <div class="ttools" style="margin-top:12px">
+      <input type="text" id="tSearch" class="grow" placeholder="🔎 Lọc nhanh theo tiêu đề / tác giả / chủ đề…">
+      <select id="tSource"><option value="">Mọi nguồn</option></select>
+      <select id="tSort"><option value="hot">Sắp xếp: độ hot</option><option value="likes">Lượt thích</option><option value="new">Mới crawl</option><option value="short">Ngắn nhất</option><option value="created">Mới đăng</option></select>
+      <select id="tPerPage" title="Số video mỗi trang"><option value="12">12 / trang</option><option value="24" selected>24 / trang</option><option value="48">48 / trang</option><option value="96">96 / trang</option><option value="0">Hiện tất cả</option></select>
+      <label class="hint" style="margin:0">Thích ≥ <input type="number" id="tMinLikes" value="0" min="0" step="1000" style="width:84px"></label>
+      <label class="hint" style="margin:0">Dài ≤ <input type="number" id="tMaxDur" value="0" min="0" step="30" style="width:66px"> giây</label>
+      <label class="chk" style="margin:0"><input type="checkbox" id="tHideDone" checked> Ẩn đã chạy</label>
+      <label class="chk" style="margin:0"><input type="checkbox" id="tShowHidden"> Hiện đã ẩn</label>
+      <button id="tSelAll" title="Chọn/bỏ chọn các video ở trang hiện tại">☑ Chọn trang này</button>
+      <span class="hint" id="tCount"></span>
+    </div>
+  </div>
+  <div class="tgrid" id="tGrid"></div>
+  <div class="pager" id="tPager" hidden></div>
+  <div class="empty" id="tEmpty" hidden>Chưa có video trong mục này. Chọn một chủ đề bên trái rồi bấm <b>🔄 Lấy video cho chủ đề này</b>, hoặc nhập từ khoá / link kênh vào ô phía trên rồi bấm <b>🔄 Lấy từ nguồn này</b> — việc này chỉ lấy danh sách, chưa tải hay xử lý video nào.</div>
   </div>
  </div>
 </div>
@@ -571,7 +586,7 @@
     <iframe id="hpFrame" hidden allow="autoplay; fullscreen; encrypted-media" style="width:100%;aspect-ratio:9/16;border:0;border-radius:8px;background:#000"></iframe>
     <video id="hpVideo" hidden controls playsinline style="width:100%;max-height:70vh;border-radius:8px;background:#000"></video>
   </div>
-  <div class="dlg-f"><button id="hpCopy">📋 Copy link</button><a id="hpOpen" target="_blank" rel="noopener" class="btnlink">Mở ↗</a><button class="primary" id="hpDub">🎙 Lồng tiếng video này</button></div>
+  <div class="dlg-f"><button id="hpCopy">📋 Copy link</button><button id="hpLib">📦 Lưu kho</button><a id="hpOpen" target="_blank" rel="noopener" class="btnlink" style="margin:0">Mở ↗</a><button class="primary" id="hpDub">🎙 Làm video này</button></div>
 </dialog>
 <dialog id="dlgEst" style="width:min(560px,94vw)">
   <div class="dlg-h"><b id="estTitle">Ước tính trước khi chạy</b><button id="estClose">✕</button></div>
@@ -589,19 +604,21 @@
 </dialog>
 <div class="actionbar" id="hActions" hidden>
   <b id="hSelN"></b>
-  <select id="hRunMode"><option value="auto">✨ Tự nhận diện từng video</option><option value="dub">🎙 Lồng tiếng + Sub</option><option value="voiceover">📢 Thuyết minh</option><option value="sub">💬 Chỉ Sub Việt</option></select>
-  <button class="primary" id="hRun">▶ Chạy các video đã chọn</button>
+  <select id="hRunMode"><option value="auto">✨ Tự nhận diện từng video</option><option value="dub">🎙 Lồng tiếng + Sub</option><option value="voiceover">📢 Thuyết minh</option><option value="sub">💬 Chỉ Sub Việt</option><option value="text">🔤 Chỉ dịch chữ màn hình</option></select>
+  <button class="primary" id="hRun">▶ Chạy ngay</button>
+  <button id="hToLib" title="Tải về Kho video và tự động phân tích AI">📦 Lưu vào Kho</button>
   <button id="hCopySel">📋 Copy link</button>
   <button id="hClear">Bỏ chọn</button>
 </div>
 <div class="actionbar" id="tActions" hidden>
   <b id="tSelN"></b>
-  <select id="tMode"><option value="auto">✨ Tự nhận diện từng video</option><option value="dub">🎙 Lồng tiếng + Sub</option><option value="voiceover">📢 Thuyết minh</option><option value="sub">💬 Chỉ Sub Việt</option></select>
-  <button class="primary" id="tRun">▶ Chạy các video đã chọn</button>
+  <select id="tMode"><option value="auto">✨ Tự nhận diện từng video</option><option value="dub">🎙 Lồng tiếng + Sub</option><option value="voiceover">📢 Thuyết minh</option><option value="sub">💬 Chỉ Sub Việt</option><option value="text">🔤 Chỉ dịch chữ màn hình</option></select>
+  <button class="primary" id="tRun">▶ Chạy ngay</button>
+  <button id="tToLib" title="Tải về Kho video và tự động phân tích AI">📦 Lưu vào Kho</button>
+  <button id="tCopySel">📋 Copy link</button>
   <button id="tHide">Ẩn</button>
-  <button id="tDel" class="danger">Xoá khỏi danh sách</button>
+  <button id="tDel" class="danger">Xoá</button>
   <button id="tClear">Bỏ chọn</button>
-  <span class="hint">Giọng, cách dịch… lấy theo tuỳ chọn ở tab “Xử lý video”.</span>
 </div>
 
 <dialog id="dlgPreview" style="width:min(560px,94vw)">
@@ -610,7 +627,7 @@
     <div id="pvMsg" class="hint" style="padding:40px 0;text-align:center"></div>
     <video id="pvVideo" controls playsinline style="max-height:70vh" hidden></video>
   </div>
-  <div class="dlg-f"><button id="pvSelect"></button></div>
+  <div class="dlg-f"><button id="pvSelect"></button><button id="pvCopy">📋 Copy link</button><button id="pvLib">📦 Lưu kho</button><button class="primary" id="pvDub">🎙 Làm video này</button></div>
 </dialog>
 
 <!-- ============ SETTINGS ============ -->

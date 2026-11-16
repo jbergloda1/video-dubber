@@ -1,8 +1,9 @@
-/* ---------------- trending ---------------- */
-let TITEMS = [], TSEL = new Set(), TPOLL = null;
+/* ---------------- trending (Kho nguồn & Bộ lọc sâu) ---------------- */
+let TITEMS = [], TSEL = new Set(), TPOLL = null, TPAGE = 1;
 const fmtN = n => fmtV(n);          // one number format in the whole app (Vietnamese: N = nghìn, Tr = triệu)
 const fmtDur = s => !s ? '' : `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
 const JOBST = { queued: ['Chờ', 'b-queued'], running: ['Đang chạy', 'b-running'], done: ['Xong', 'b-done'], error: ['Lỗi', 'b-error'], cancelled: ['Huỷ', 'b-cancelled'], awaiting_approval: ['Chờ duyệt', 'b-awaiting_approval'], deleted: ['Job đã xoá', 'b-cancelled'] };
+const trendUrl = it => !it ? '' : ((it.platform || 'douyin') !== 'douyin' || (it.url || '').includes('/hot/') ? (it.url || '') : 'https://www.douyin.com/jingxuan?modal_id=' + it.id);
 
 let TCATS = [], TCOUNTS = {}, TCAT = '', SOURCES = [];
 async function loadTrending() {
@@ -17,19 +18,38 @@ async function loadTrending() {
     }
   }, 1500);
 }
+function updateFeedInputHint() {
+  const inp = $('#tFeedInput'); if (!inp) return;
+  const v = $('#tFeed').value || '';
+  if (v === 'search') {
+    inp.placeholder = 'Nhập từ khoá tìm trên Douyin (vd: 足球, 科技, 搞笑)…';
+    inp.focus();
+  } else if (v.endsWith('|user:')) {
+    inp.placeholder = 'Dán link kênh Douyin (douyin.com/user/…) hoặc sec_uid…';
+    inp.focus();
+  } else if (v.endsWith('|page:')) {
+    inp.placeholder = 'Dán link Page Facebook (vd: https://www.facebook.com/espn)…';
+    inp.focus();
+  } else {
+    inp.placeholder = 'Hoặc dán thẳng link kênh Douyin / Page Facebook / từ khoá…';
+  }
+}
 function fillFeeds() {
   $('#tFeed').innerHTML = SOURCES.map(src => `<optgroup label="${esc(src.label)}">` +
     src.feeds.map(f => `<option value="${esc(src.id + '|' + f.feed)}">${esc(f.label)}</option>`).join('') + '</optgroup>').join('') +
-    '<option value="search">🔎 Tìm kiếm Douyin (cần giải captcha)…</option>';
+    '<option value="search">🔎 Tìm kiếm Douyin theo từ khoá…</option>';
   $('#tSource').innerHTML = '<option value="">Mọi nguồn</option>' + SOURCES.map(src => `<option value="platform:${src.id}">${esc(src.label)}</option>`).join('') +
     '<option value="hot">热榜</option><option value="featured">精选</option><option value="tab">Tab chủ đề</option>';
+  updateFeedInputHint();
 }
+$('#tFeed').addEventListener('change', updateFeedInputHint);
+
 function renderCats() {
   const rows = [`<div class="tcat ${TCAT === '' ? 'on' : ''}" data-cat=""><span>📚 Tất cả</span><small>${TITEMS.filter(i => !i.hidden).length}</small></div>`]
     .concat(TCATS.map(n => `<div class="tcat ${TCAT === n.id ? 'on' : ''}" data-cat="${n.id}" style="padding-left:${8 + n.depth * 16}px">
       <span>${n.depth ? '' : '▸ '}${esc(n.name)}</span><small>${TCOUNTS[n.id] || 0}</small></div>`));
   $('#tCats').innerHTML = rows.join('');
-  $$('#tCats .tcat').forEach(el => el.onclick = () => { TCAT = el.dataset.cat; renderCats(); renderTrending(); });
+  $$('#tCats .tcat').forEach(el => el.onclick = () => { TCAT = el.dataset.cat; TPAGE = 1; renderCats(); renderTrending(); });
   const cur = TCATS.find(n => n.id === TCAT);
   $('#tCatTitle').textContent = cur ? cur.name : 'Tất cả video';
   const feeds = cur ? Object.entries(cur.feeds).flatMap(([p, fs]) => fs.map(f => `${p}: ${f}`)) : [];
@@ -49,26 +69,34 @@ function renderTState(st) {
 async function crawl(body) {
   try {
     const r = await api('/api/trending/crawl', { method: 'POST', body: { ...body, pages: +$('#crawlPages').value || 3 } });
-    LAST_CRAWL = { ...body, more: false }; loadTrending();
+    LAST_CRAWL = { ...body, more: false }; TPAGE = 1; loadTrending();
   } catch (e) { toast(e.message, 7000) }
 }
 $('#crawlMore').onclick = () => LAST_CRAWL && crawl({ ...LAST_CRAWL, more: true });
 $('#crawlStop').onclick = () => api('/api/trending/cancel', { method: 'POST' }).then(() => toast('Đang dừng sau trang hiện tại…'));
 $('#crawlCat').onclick = () => crawl({ category: TCAT });
 $('#crawlFeed').onclick = () => {
+  const inp = ($('#tFeedInput')?.value || '').trim();
   let v = $('#tFeed').value;
-  if (v === 'search') {
-    const kw = prompt('Từ khoá tìm trên Douyin (tiếng Trung cho kết quả tốt hơn, vd: 足球):'); if (!kw) return;
-    v = 'douyin|search:' + kw.trim();
+  if (inp) {
+    if (/^https?:\/\/(www\.|m\.)?(facebook\.com|fb\.watch)\//i.test(inp) || v.endsWith('|page:')) {
+      if (!/^https?:\/\/(www\.|m\.)?(facebook\.com|fb\.watch)\//i.test(inp)) return toast('URL Page Facebook không hợp lệ (vd: https://www.facebook.com/espn)');
+      return crawl({ targets: [['facebook', 'page:' + inp]] });
+    }
+    if (/douyin\.com\/user\/|^user:|^MS4wLjAB/i.test(inp) || v.endsWith('|user:')) {
+      return crawl({ targets: [['douyin', 'user:' + inp.replace(/^user:/i, '').trim()]] });
+    }
+    return crawl({ targets: [['douyin', 'search:' + inp.replace(/^search:/i, '').trim()]] });
   }
-  if (v.endsWith('|page:')) {
-    const url = prompt('URL trang/Page Facebook (vd: https://www.facebook.com/espn) — app lấy các Reels công khai của trang đó:');
-    if (!url || !/^https?:\/\/(www\.|m\.)?(facebook\.com|fb\.watch)\//.test(url.trim())) return url && toast('URL Facebook không hợp lệ');
-    v = v + url.trim();
+  if (v === 'search' || v.endsWith('|user:') || v.endsWith('|page:')) {
+    $('#tFeedInput')?.focus();
+    return toast('Hãy nhập từ khoá hoặc dán link kênh / Page vào ô bên cạnh trước khi bấm Lấy video');
   }
   const [src, ...rest] = v.split('|'); crawl({ targets: [[src, rest.join('|')]] });
 };
-['#tSearch', '#tSource', '#tSort', '#tMinLikes', '#tMaxDur', '#tHideDone', '#tShowHidden'].forEach(s => $(s).addEventListener('input', renderTrending));
+if ($('#tFeedInput')) $('#tFeedInput').addEventListener('keydown', e => { if (e.key === 'Enter') $('#crawlFeed').click(); });
+['#tSearch', '#tSource', '#tSort', '#tMinLikes', '#tMaxDur', '#tHideDone', '#tShowHidden'].forEach(s => $(s).addEventListener('input', () => { TPAGE = 1; renderTrending(); }));
+if ($('#tPerPage')) $('#tPerPage').addEventListener('change', () => { TPAGE = 1; renderTrending(); });
 
 /* category editor */
 $('#btnEditCats').onclick = async () => { const r = await api('/api/categories'); $('#catsJson').value = JSON.stringify(r.categories, null, 2); $('#dlgCats').showModal(); };
@@ -94,16 +122,29 @@ function filteredTrending() {
   const key = { hot: it => -(it.hot_value || 0) * 10 - (it.likes || 0), likes: it => -(it.likes || 0), new: it => -(it.first_seen || 0), short: it => it.duration || 1e9, created: it => -(it.created || 0) }[$('#tSort').value];
   return xs.sort((a, b) => key(a) - key(b));
 }
+
+function trendingPageItems() {
+  const all = filteredTrending();
+  const per = +($('#tPerPage')?.value ?? 24) || 0;
+  if (per <= 0) return { pageItems: all, startOffset: 0, per: 0, total: all.length };
+  const pages = Math.max(1, Math.ceil(all.length / per));
+  if (TPAGE > pages) TPAGE = pages;
+  if (TPAGE < 1) TPAGE = 1;
+  const startOffset = (TPAGE - 1) * per;
+  return { pageItems: all.slice(startOffset, startOffset + per), startOffset, per, total: all.length };
+}
+
 function renderTrending() {
-  const xs = filteredTrending();
-  $('#tCount').textContent = `${xs.length} / ${TITEMS.length} video`;
-  $('#tEmpty').hidden = xs.length > 0;
+  const { pageItems: xs, per, total } = trendingPageItems();
+  $('#tCount').textContent = `${total} / ${TITEMS.length} video`;
+  $('#tEmpty').hidden = total > 0;
   $('#tGrid').innerHTML = xs.map(it => {
     const js = JOBST[it.job_status];
     const cover = it.has_cover ? `/trending/cover/${it.id}` : (it.cover_url || '');
-    return `<div class="tcard ${TSEL.has(it.id) ? 'sel' : ''} ${it.hidden ? 'hid' : ''}" data-id="${it.id}">
-      <div class="cv" style="background-image:url('${esc(cover)}')">
-        <div class="ck">${TSEL.has(it.id) ? '✓' : ''}</div>
+    const u = trendUrl(it);
+    return `<div class="tcard ${TSEL.has(it.id) ? 'sel' : ''} ${it.hidden ? 'hid' : ''}" data-id="${esc(it.id)}">
+      <div class="cv" style="background-image:url('${esc(cover)}')" data-pv="${esc(it.id)}" title="Bấm để xem trước">
+        <div class="ck" data-sel="${esc(it.id)}" title="Chọn để chạy hoặc lưu hàng loạt">${TSEL.has(it.id) ? '✓' : ''}</div>
         ${js ? `<span class="badge st ${js[1]}" style="background:rgba(0,0,0,.6)">${js[0]}</span>` : ''}
         ${it.rank ? `<span class="rank">#${it.rank}</span>` : ''}
         ${it.duration ? `<span class="dur">${fmtDur(it.duration)}</span>` : ''}
@@ -113,24 +154,47 @@ function renderTrending() {
         <div class="mt">${it.author ? `<span>👤 ${esc(it.author)}</span>` : ''}
           ${it.hot_value ? `<span>🔥 ${fmtN(it.hot_value)}</span>` : ''}${it.likes ? `<span>❤ ${fmtN(it.likes)}</span>` : ''}
           ${it.views ? `<span>👁 ${fmtN(it.views)}</span>` : ''}<span>${(it.platform || 'douyin') === 'facebook' ? '📘 Facebook' : (it.feeds && it.feeds.length ? it.feeds : (it.sources || [it.source])).map(s => s === 'hot' ? '热榜' : s === 'featured' ? '精选' : String(s).replace('tab:', '')).join(' · ')}</span></div>
-        <div class="lk"><button data-pv="${it.id}" style="color:var(--text)">▶ Xem nhanh</button>
-          <a href="${(it.platform || 'douyin') !== 'douyin' || (it.url || '').includes('/hot/') ? esc(it.url) : 'https://www.douyin.com/jingxuan?modal_id=' + it.id}" target="_blank" rel="noopener" title="Mở trên web">${(it.platform || 'douyin') === 'facebook' ? 'Facebook' : 'Douyin'} ↗</a>
-          ${it.job_id && it.job_status !== 'deleted' ? `<button data-job="${it.job_id}">Mở job</button>` : ''}</div>
+        <div class="lk"><button data-pv="${esc(it.id)}" style="color:var(--text)">▶ Xem thử</button>
+          <button data-dub="${esc(u)}" style="color:var(--text)">🎙 Làm ngay</button>
+          <button data-lib="${esc(u)}" title="Tải về Kho video & tự phân tích AI">📦 Lưu kho</button>
+          <button data-copy="${esc(u)}">📋 Link</button>
+          <a href="${esc(u)}" target="_blank" rel="noopener" title="Mở trên web">↗</a>
+          ${it.job_id && it.job_status !== 'deleted' ? `<button data-job="${esc(it.job_id)}">Mở job</button>` : ''}</div>
       </div></div>`;
   }).join('');
-  $$('#tGrid .cv').forEach(cv => cv.onclick = () => { const id = cv.parentElement.dataset.id; TSEL.has(id) ? TSEL.delete(id) : TSEL.add(id); renderTrending(); });
+  $$('#tGrid [data-sel]').forEach(b => b.onclick = e => { e.stopPropagation(); const id = b.dataset.sel; TSEL.has(id) ? TSEL.delete(id) : TSEL.add(id); renderTrending(); });
   $$('#tGrid [data-job]').forEach(b => b.onclick = () => { showView('main'); openJob(b.dataset.job); });
   $$('#tGrid [data-pv]').forEach(b => b.onclick = () => openPreview(b.dataset.pv));
+  $$('#tGrid [data-dub]').forEach(b => b.onclick = () => hotDub(b.dataset.dub));
+  $$('#tGrid [data-lib]').forEach(b => b.onclick = () => addToLib(b.dataset.lib));
+  $$('#tGrid [data-copy]').forEach(b => b.onclick = () => copyText(b.dataset.copy));
+  if ($('#tSelAll')) {
+    const allSel = xs.length > 0 && xs.every(i => TSEL.has(i.id));
+    $('#tSelAll').textContent = allSel ? '☐ Bỏ chọn trang' : '☑ Chọn trang này';
+  }
+  const extraLbl = LAST_CRAWL ? '➕ Tải sâu thêm từ nguồn vừa lấy' : (!($('#crawlCat')?.hidden) ? '🔄 Lấy thêm video cho chủ đề này' : '🔄 Lấy thêm từ nguồn đang chọn');
+  const extraFn = () => LAST_CRAWL ? $('#crawlMore').click() : (!($('#crawlCat')?.hidden) ? $('#crawlCat').click() : $('#crawlFeed').click());
+  renderPager($('#tPager'), TPAGE, total, per, p => {
+    TPAGE = p; renderTrending();
+    $('#tCatTitle')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, extraLbl, extraFn);
   $('#tActions').hidden = !TSEL.size || $('#trendView').hidden;
   $('#tSelN').textContent = `Đã chọn ${TSEL.size}`;
 }
+if ($('#tSelAll')) $('#tSelAll').onclick = () => {
+  const { pageItems: xs } = trendingPageItems();
+  if (!xs.length) return toast('Chưa có video để chọn');
+  const allSel = xs.every(i => TSEL.has(i.id));
+  xs.forEach(i => allSel ? TSEL.delete(i.id) : TSEL.add(i.id));
+  renderTrending();
+};
 let PVID = null;
 async function openPreview(id) {
   const it = TITEMS.find(x => x.id === id) || {};
   PVID = id;
   const d = $('#dlgPreview'), v = $('#pvVideo');
   $('#pvTitle').textContent = it.title || id;
-  $('#pvMsg').textContent = '⏳ Đang lấy link video từ Douyin (khoảng 10–20 giây)…'; $('#pvMsg').hidden = false;
+  $('#pvMsg').textContent = '⏳ Đang lấy link video…'; $('#pvMsg').hidden = false;
   v.hidden = true; v.removeAttribute('src'); v.load();
   $('#pvSelect').textContent = TSEL.has(id) ? '✓ Đã chọn' : '+ Chọn video này';
   d.showModal();
@@ -144,7 +208,15 @@ function closePreview() { const v = $('#pvVideo'); v.pause(); v.removeAttribute(
 $('#pvClose').onclick = closePreview;
 $('#dlgPreview').addEventListener('cancel', e => { e.preventDefault(); closePreview(); });
 $('#pvSelect').onclick = () => { if (!PVID) return; TSEL.has(PVID) ? TSEL.delete(PVID) : TSEL.add(PVID); $('#pvSelect').textContent = TSEL.has(PVID) ? '✓ Đã chọn' : '+ Chọn video này'; renderTrending(); };
+if ($('#pvCopy')) $('#pvCopy').onclick = () => { const it = TITEMS.find(x => x.id === PVID); if (it) copyText(trendUrl(it)); };
+if ($('#pvLib')) $('#pvLib').onclick = () => { const it = TITEMS.find(x => x.id === PVID); if (it) addToLib(trendUrl(it)); };
+if ($('#pvDub')) $('#pvDub').onclick = () => { const it = TITEMS.find(x => x.id === PVID); const u = trendUrl(it); closePreview(); if (u) hotDub(u); };
 $('#tClear').onclick = () => { TSEL.clear(); renderTrending(); };
+if ($('#tCopySel')) $('#tCopySel').onclick = () => copyText([...TSEL].map(id => trendUrl(TITEMS.find(x => x.id === id))).filter(Boolean).join('\n'));
+if ($('#tToLib')) $('#tToLib').onclick = async () => {
+  await addToLib([...TSEL].map(id => trendUrl(TITEMS.find(x => x.id === id))).filter(Boolean));
+  TSEL.clear(); renderTrending();
+};
 $('#tHide').onclick = async () => { await api('/api/trending/hide', { method: 'POST', body: { ids: [...TSEL], hidden: true } }); TSEL.clear(); loadTrending(); };
 $('#tDel').onclick = async () => {
   if (!confirm(`Xoá ${TSEL.size} video khỏi danh sách trending? (chỉ xoá khỏi danh sách, không xoá job đã chạy)`)) return;
@@ -163,7 +235,7 @@ async function runTrending(ids, opts) {
   };
   const durs = ids.map(id => (TITEMS.find(t => t.id === id) || {}).duration || 0);
   if (durs.every(d => d > 0)) return showEstimate({ durations: durs, options: opts }, `Ước tính cho ${n} video (chạy lần lượt)`, go);
-  if (!confirm(`Đưa ${n} video vào hàng đợi xử lý (${({ dub: 'lồng tiếng + sub', voiceover: 'thuyết minh', sub: 'chỉ sub' })[mode] || mode})?\nCác video chạy lần lượt trên GPU, giãn cách tải để tránh bị Douyin chặn.`)) return;
+  if (!confirm(`Đưa ${n} video vào hàng đợi xử lý (${({ dub: 'lồng tiếng + sub', voiceover: 'thuyết minh', sub: 'chỉ sub', text: 'chỉ dịch chữ' })[mode] || mode})?\nCác video chạy lần lượt trên GPU, giãn cách tải để tránh bị Douyin chặn.`)) return;
   try { await go() } catch (e) { toast(e.message) }
 };
 setInterval(() => { if (!$('#trendView').hidden && !TPOLL && TITEMS.some(it => ['queued', 'running'].includes(it.job_status))) loadTrending(); }, 10000);

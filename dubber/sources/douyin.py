@@ -140,7 +140,7 @@ class Douyin(SourceAdapter):
             page.wait_for_timeout(6000)
             if "验证码" in (page.title() or ""):
                 stop()
-                raise NeedsUser("Douyin yêu cầu giải captcha khi tìm kiếm (chưa đăng nhập)")
+                raise NeedsUser("Douyin chặn tìm kiếm từ khoá khi chưa đăng nhập (DTK v5 không có API search cho Douyin, chỉ hỗ trợ Quét kênh Douyin và Bảng Hot). Để tìm từ khoá: vào ⚙ Cài đặt → 🔑 Đăng nhập Douyin, hoặc chọn Chủ đề bên trái / dán link kênh Douyin.")
             self._scroll(page, pages, progress)
             stop()
             return _awemes(bucket, feed, _item_from_aweme, _walk_awemes)

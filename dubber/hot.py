@@ -313,6 +313,7 @@ def douyin_items(category: str = "") -> list[dict]:
                     "title": it.get("title", ""), "author": it.get("author", ""), "views": it.get("views") or 0,
                     "likes": it.get("likes") or 0, "comments": it.get("comments") or 0, "shares": it.get("shares") or 0,
                     "duration": it.get("duration") or 0, "created": it.get("created") or 0,
+                    "feeds": it.get("feeds") or ([it["feed"]] if it.get("feed") else []),
                     "cover": f"/trending/cover/{it['id']}"
                     if (trending.COVERS / f"{trending.cover_name(it['id'])}.jpg").exists() else it.get("cover_url", ""),
                     "job_id": it.get("job_id")})
@@ -329,4 +330,10 @@ def douyin_hot() -> list[dict]:
 
 def search_local(q: str, items: list[dict]) -> list[dict]:
     words = [w for w in q.lower().split() if w]
-    return [i for i in items if all(w in (i.get("title", "") + " " + i.get("author", "")).lower() for w in words)]
+    return [
+        i for i in items
+        if all(
+            w in f"{i.get('title', '')} {i.get('author', '')} @{i.get('author_id', '')} {' '.join(i.get('feeds') or [])}".lower()
+            for w in words
+        )
+    ]
